@@ -1,0 +1,32 @@
+{
+  "source_url": "https://cdnbbsr.s3waas.gov.in/s380537a945c7aaa788ccfcdf1b99b5d8f/uploads/2023/05/2023050195.pdf",
+  "content_sha256": "4699ff98cece2142f96ce0dba62539e8219e658ba6b595efcb666caf2fcea26d",
+  "retrieved_at": "2026-10-30T22:24:03.666945+00:00",
+  "pdf_pages": 404,
+  "part_iii_pdf_pages": [
+    37,
+    52
+  ],
+  "counts": {
+    "provisions": 29,
+    "rights": 24,
+    "jurisdictions": 37,
+    "categories": 6,
+    "authorities": 1,
+    "remedies": 1
+  },
+  "checks": {
+    "all_part_iii_articles_found": true,
+    "every_right_has_nonempty_quote": true,
+    "effective_date_parsed_from_article_394": true,
+    "repealed_articles": [
+      "31",
+      "32A"
+    ],
+    "jurisdiction_names_not_found_in_first_schedule": [],
+    "state_count": 28,
+    "union_territory_count": 8
+  },
+  "scope": "Part III (Fundamental Rights) of the Constitution of India only. No Central Act, State Act, rule, notification, judgment or scheme has been indexed.",
+  "human_verified_records": 0
+}
