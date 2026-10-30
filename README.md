@@ -1,0 +1,2 @@
+# Legal_rights_awareness_assistant
+Hacktober fest
