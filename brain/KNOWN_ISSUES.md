@@ -25,7 +25,7 @@ Found during the 2026-10-31 audit and the frontend build that followed. Severity
 | 21 | H | Legal | Every legal provision, document, source, topic and plan in the frontend is fictional. Nothing may be shipped as real until replaced by verified content (ADR-016) |
 | 22 | H | Frontend | Uploaded documents are not read: the analysis for a user file is a fixed demonstration. Preview uses the browser's native PDF viewer, not PDF.js |
 | 23 | M | Contracts | The structured answer and several UI models (conversation, plan, knowledge, graph) have no ratified backend contract (ADR-018) |
-| 24 | M | Frontend | `package.json` has no `typecheck` script; Playwright suite needs a prior `npm run build` and fixed port 4310 |
+| 24 | M | Frontend | Playwright suite needs a prior `npm run build` and fixed port 4310 |
 | 25 | M | Frontend | Accessibility has not been audited with automated tooling (axe) or a screen reader; keyboard paths were exercised in a few Playwright tests only |
 | 26 | M | Frontend | Interface language is English only; the setting is stored but unused. Sample answers exist only in English, Hindi and Telugu. Telugu and Hindi sample text was not reviewed by a speaker |
 | 27 | M | Frontend | Mock data is stored in `localStorage` with no migration for shape changes; clear the keys in Settings → Delete local data if a fixture changes |
@@ -38,7 +38,6 @@ Found during the 2026-10-31 audit and the frontend build that followed. Severity
 | 34 | M | AI | Hosted GLM is slow: first words after 45 to 60 s even with thinking-disable parameters (none had an effect). Reasoning tokens are dropped server-side. Needs a faster model or endpoint before real use |
 | 35 | M | Backend | `/assistant/answers` has no rate limiting, no auth and no usage cap; anyone who can reach the port can spend the key. Do not expose it beyond localhost |
 | 36 | M | Backend | No PostgreSQL is running; `/health` reports `degraded`. Conversations are stored in the browser only |
-| 37 | L | Backend | `pytest` fails with `No module named 'app'` unless run as `python -m pytest` (no `pythonpath` in `pytest.ini`) |
 | 38 | H | Legal | The catalogue covers Part III of the Constitution only. "Comprehensive Indian rights database" is the goal; today it is under 1% of the source universe and must never be described as complete. Coverage audit not started |
 | 39 | H | Legal | No catalogue record is human-verified. Which articles count as individual rights, their `kind`, and the Article 19(1) sub-right titles are editorial choices awaiting legal review |
 | 40 | M | Legal | The source PDF is the May 2022 edition (to the 105th Amendment). Later amendments are not reflected; publisher identity is inferred from the PDF itself, not confirmed on legislative.gov.in |
@@ -46,4 +45,4 @@ Found during the 2026-10-31 audit and the frontend build that followed. Severity
 | 42 | M | Legal | No parsers or source adapters exist for India Code, State government portals or Gazette publications. India Code was not reachable from this machine on 2026-10-31 (HTTP connection failed) |
 | 43 | L | Frontend | Dashboard, search suggestions, evidence graph and saved items still link to fictional fixture topics when running in mock mode; in live mode those ids do not exist in the catalogue |
 | 44 | L | Backend | ISO 3166-2 style jurisdiction codes (`IN-TG`, ...) were typed from knowledge, not verified against a source |
-
+| 45 | M | Frontend | Tailwind is wired only through the Turbopack rule in `next.config.ts`. Running `next dev` or `next build` with `--webpack` produces a page with no utility classes (unstyled). Keep the default Turbopack scripts, or add `@tailwindcss/postcss` first |

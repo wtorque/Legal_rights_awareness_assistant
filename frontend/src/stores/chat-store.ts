@@ -24,6 +24,7 @@ interface ChatState {
 }
 
 let controller: AbortController | null = null;
+let loading: Promise<void> | null = null;
 
 function patchConversation(list: Conversation[], id: string, fn: (c: Conversation) => Conversation) {
   return list.map((c) => (c.id === id ? fn(c) : c));
@@ -42,20 +43,26 @@ export const useChatStore = create<ChatState>((set, get) => ({
   activeId: null,
   busy: false,
 
-  load: async () => {
-    if (get().status === "loading") return;
-    set({ status: "loading" });
-    try {
-      const conversations = await chatService.listConversations();
-      set({ conversations, status: "ready" });
-    } catch {
-      set({ status: "error" });
-    }
+  // Shared in-flight promise: a late load must never overwrite conversations created while it ran.
+  load: () => {
+    loading ??= (async () => {
+      set({ status: "loading" });
+      try {
+        const conversations = await chatService.listConversations();
+        set({ conversations, status: "ready" });
+      } catch {
+        set({ status: "error" });
+      } finally {
+        loading = null;
+      }
+    })();
+    return loading;
   },
 
   select: (activeId) => set({ activeId }),
 
   startNew: async () => {
+    if (get().status === "idle" || get().status === "loading") await get().load();
     const prefs = usePreferencesStore.getState();
     const existingEmpty = get().conversations.find((c) => c.messages.length === 0);
     if (existingEmpty) {
@@ -89,6 +96,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   send: async (question) => {
     const text = question.trim();
     if (!text || get().busy) return;
+    if (get().status === "idle" || get().status === "loading") await get().load();
     let convId = get().activeId;
     if (!convId) convId = await get().startNew();
 

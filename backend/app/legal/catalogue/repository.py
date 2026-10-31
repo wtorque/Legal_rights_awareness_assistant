@@ -139,7 +139,7 @@ class CatalogueRepository:
         return {
             "complete": False,
             "audit_status": "not_started",
-            "statement": ("Coverage is NOT complete and has not been audited. Only the sources listed under `documents` "
+            "statement": ("Coverage is NOT complete and has not been audited. Only the documents listed below "
                           "have been indexed; every other Central Act, State Act, rule, notification, judgment and scheme is missing."),
             "counts": {
                 "rights": len(self.rights), "provisions": len(self.provisions), "documents": len(self.documents),

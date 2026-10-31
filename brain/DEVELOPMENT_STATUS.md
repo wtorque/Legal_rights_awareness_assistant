@@ -18,6 +18,15 @@ Last verified: **2026-10-31**. Update this file after every meaningful change. O
 | Live assistant (2026-10-31) | A real question from the browser to `POST /api/v1/assistant/answers` streamed a `z-ai/glm-5.3-flash` answer back; the UI showed the "AI-generated · not verified" badge; no console errors. First words take 45 to 60 s, total about 55 to 70 s |
 | Frontend tests after the backend change | Vitest 24/24, `tsc`, `lint` pass. Playwright was not re-run after the HTTP service was added (it uses mocks) |
 
+## Demo and bug-fix pass (2026-10-31)
+
+- Browser demo with Playwright (Chromium, dev server in live mode): all 15 routes in light and dark, theme toggle, sidebar collapse, search, notifications, jurisdiction and language menus, rights search and detail, document upload and viewer, comparison, action plan checklist, evidence graph, legal aid, knowledge, settings, help, 404, mobile drawer, and a live assistant answer.
+- Fixed: `frontend/package.json` had `--webpack` on `dev` and `build`, which rendered every page unstyled because Tailwind is wired through the Turbopack rule only (KNOWN_ISSUES #45). Scripts are back to the default; the `typecheck` script stays.
+- Fixed: a question sent while the conversation list was still loading disappeared, because the late `load()` overwrote the store. `load` now shares one in-flight promise and `send`/`startNew` wait for it. Regression test added in `chat-store.test.ts` (fails without the fix).
+- Fixed: the rights coverage notice showed raw backticks (`` `documents` ``); the wording is now plain text.
+- Verified after the fixes: `tsc` and `lint` pass; Vitest 28/28; `npm run build` (Turbopack) passes; Playwright 44/44; backend `pytest` 26 passed, 1 skipped.
+- Observed, not fixed: a live answer took about 120 s to finish (upstream latency, KNOWN_ISSUES #34). The first attempt hit the 120 s upstream read timeout and the backend retried.
+
 ## Completed (frontend, all on mock services)
 
 - Application shell: collapsible sidebar with tooltips and keyboard toggle, mobile drawer, topbar with breadcrumbs, search trigger, jurisdiction and language menus, notifications popover, theme toggle, account menu, shortcuts dialog.
