@@ -6,7 +6,7 @@ import { transitions } from "@/lib/motion";
 /** Enter animation for route content. Used from template.tsx so it replays per navigation. */
 export function PageTransition({ children }: { children: React.ReactNode }) {
   return (
-    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={transitions.base}>
+    <motion.div initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={transitions.slow}>
       {children}
     </motion.div>
   );

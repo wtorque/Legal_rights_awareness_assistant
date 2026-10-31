@@ -1,0 +1,1252 @@
+From 2a73d49f64c399c8db3430b3d91644ec466f4c67 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sat, 31 Oct 2026 00:19:15 +0000
+Subject: [PATCH] docs: add research phase documents (docs/research)
+
+---
+ docs/research/AI_AND_RAG_RESEARCH.md          | 132 +++++++++++++++++
+ docs/research/COMPETITOR_ANALYSIS.md          | 100 +++++++++++++
+ docs/research/FEATURE_PRIORITIZATION.md       |  74 ++++++++++
+ docs/research/FEATURE_RESEARCH.md             |  86 +++++++++++
+ docs/research/FINAL_RESEARCH_REPORT.md        | 136 ++++++++++++++++++
+ docs/research/GLOBAL_JURISDICTION_RESEARCH.md |  71 +++++++++
+ docs/research/LEGAL_DATA_LICENSING.md         |  63 ++++++++
+ docs/research/LEGAL_RELIABILITY_AND_SAFETY.md |  69 +++++++++
+ docs/research/MARKET_GAP_ANALYSIS.md          |  72 ++++++++++
+ docs/research/OFFICIAL_LEGAL_DATA_SOURCES.md  |  92 ++++++++++++
+ .../research/PRODUCT_ARCHITECTURE_RESEARCH.md |  96 +++++++++++++
+ docs/research/PROJECT_PROBLEM_ANALYSIS.md     |  62 ++++++++
+ docs/research/TECH_STACK_VALIDATION.md        |  84 +++++++++++
+ 13 files changed, 1137 insertions(+)
+ create mode 100644 docs/research/AI_AND_RAG_RESEARCH.md
+ create mode 100644 docs/research/COMPETITOR_ANALYSIS.md
+ create mode 100644 docs/research/FEATURE_PRIORITIZATION.md
+ create mode 100644 docs/research/FEATURE_RESEARCH.md
+ create mode 100644 docs/research/FINAL_RESEARCH_REPORT.md
+ create mode 100644 docs/research/GLOBAL_JURISDICTION_RESEARCH.md
+ create mode 100644 docs/research/LEGAL_DATA_LICENSING.md
+ create mode 100644 docs/research/LEGAL_RELIABILITY_AND_SAFETY.md
+ create mode 100644 docs/research/MARKET_GAP_ANALYSIS.md
+ create mode 100644 docs/research/OFFICIAL_LEGAL_DATA_SOURCES.md
+ create mode 100644 docs/research/PRODUCT_ARCHITECTURE_RESEARCH.md
+ create mode 100644 docs/research/PROJECT_PROBLEM_ANALYSIS.md
+ create mode 100644 docs/research/TECH_STACK_VALIDATION.md
+
+diff --git a/docs/research/AI_AND_RAG_RESEARCH.md b/docs/research/AI_AND_RAG_RESEARCH.md
+new file mode 100644
+index 0000000..fa0b385
+--- /dev/null
++++ b/docs/research/AI_AND_RAG_RESEARCH.md
+@@ -0,0 +1,132 @@
++# AI & RAG Architecture Research
++
++**Prepared:** 31 Oct 2026 · All URLs accessed 2026-10-31.
++**[V]** verified · **[A]** assumption · **[R]** recommendation
++
++---
++
++## 1. Verdict on the proposed AI stack
++
++| Proposed | Verdict | Reason |
++|---|---|---|
++| NVIDIA API with GLM | **Keep, with a guard** | GLM models are available on NVIDIA's API catalog — `glm-5-3-flash` is listed [V] https://build.nvidia.com/models — but the lineup churns: GLM-5 was deprecated on 20 Apr 2026 and users reported its named replacement wasn't callable at first [V] https://forums.developer.nvidia.com/t/urgent-glm-5-deprecation-april-20-2026-replacement-z-ai-glm-5-1-not-available-in-nim-api/366610 . **[R]** Put the model ID in an env var, test it the morning of the hackathon, and keep one fallback model ID. |
++| Python + FastAPI | **Keep** | Team familiarity; one service is enough |
++| RAG | **Keep** | Mandatory for traceability |
++| PostgreSQL + pgvector | **Optional — skip for 3–4h** | Corpus is <2,000 chunks [A]; in-memory NumPy cosine + BM25 is faster to build and has no DB to provision. Use pgvector later. |
++| Sentence Transformers (local) | **Replace for deployment** | Free hosts give 512 MB RAM (Render) [V] https://render.com/docs/llms-full.txt — too small for a multilingual model like BGE-M3 **[A]**. Use NVIDIA-hosted embeddings instead. |
++| Hybrid search | **Keep** | Legal queries contain exact tokens ("section 69", "RTI") that BM25 catches and embeddings miss |
++| Multilingual embeddings | **Keep** | `nemotron-3.5-embed-1b` lists Hindi and Telugu in its evaluated languages; 32k context; 2048-d (truncatable to 1024/512) [V] https://build.nvidia.com/nvidia/nemotron-3_5-embed-1b/modelcard |
++
++### GLM-5.3-Flash facts [V] https://build.nvidia.com/z-ai/glm-5-3-flash/modelcard
++- 320B total / 18B active parameters (MoE), up to 1,048,576-token context, text + image input (up to 8 images/request on this endpoint), MIT-licensed weights, hosted endpoint under NVIDIA API Trial ToS, released 25 Aug 2026.
++- Supported languages are **not** stated on the model card → **test Telugu output quality before committing** **[R]**.
++
++### NVIDIA free API constraints
++- OpenAI-compatible base URL `https://integrate.api.nvidia.com/v1`; keys begin `nvapi-`; ~40 requests/minute per model, best-effort, no SLA [V] https://jaesolshin.com/posts/nvidia-nim-api/ (secondary, May 2026); multiple developer-forum threads request increases from 40 → 200 RPM, consistent with a 40 RPM default [V] https://forums.developer.nvidia.com/t/request-for-nvidia-nim-api-rate-limit-increase-40-200-rpm/369357
++- **Implication:** fine for a demo; cache answers to the 5 rehearsed demo questions to survive throttling **[R]**.
++
++## 2. Ingestion pipeline (offline, run once)
++
++```
++India Code PDFs ──► PyMuPDF text ──► section splitter (regex on "^\d+[A-Z]?\.\s" + chapter headers)
++      ──► clean (remove running headers/footnote markers) ──► chunk = 1 section (split long sections by sub-section "(1)","(2)")
++      ──► metadata ──► embed (NVIDIA, batch) ──► corpus.jsonl + embeddings.npy + bm25.pkl
++```
++
++**Chunk metadata (minimum):** `chunk_id` (e.g. `CPA2019:s69`), `act_title`, `act_year`, `jurisdiction` (`IN` / `IN-TG`), `section`, `heading`, `text`, `source_url`, `downloaded_on`, `in_force` (`yes` / `partly` / `repealed`), `commencement_ref`, `persona_tags`.
++
++Why section-level chunking **[R]**: a section is the unit people cite and the unit the verifier checks. Fixed-size token chunks split sections and break citations.
++
++Scanned PDFs: India Code PDFs for the MVP Acts are text PDFs **[A]** — verify with PyMuPDF; if a page has no text layer, skip OCR and hand-fix (cheaper than OCR in a 4-hour build).
++
++## 3. Query-time pipeline
++
++```
++user question (te/hi/en) + persona + state
++  1. Repeal Radar regex on question ─────────────► banner if old law mentioned
++  2. Query rewrite (LLM, short): translate to English legal query + extract dates/amounts
++  3. Filter chunks: jurisdiction ∈ {IN, IN-TG} ∧ persona_tags
++  4. Hybrid retrieve: BM25 top-20 ∪ embedding top-20 → Reciprocal Rank Fusion → top-6
++  5. Generate (GLM) with STRICT JSON schema (below), answer language = user language
++  6. Verify each claim (deterministic) ───────────► verified / unverified
++  7. Repeal Radar regex on answer text
++  8. Rights Clock + Legal-aid card (deterministic, no LLM)
++  9. Render: verified claims, greyed unverified, source pane (English text), help card
++```
++
++Reranking: `nemotron-3.5-rerank-8b` is listed on the catalog [V] https://build.nvidia.com/models . **[R]** Skip in MVP (extra call, extra latency, rate limit); RRF over a tiny filtered corpus is enough.
++
++## 4. Evidence-grounded generation contract
++
++```json
++{
++  "answer_language": "te",
++  "claims": [
++    {
++      "text": "<one plain-language sentence in user language>",
++      "chunk_id": "CPA2019:s69",
++      "support_quote": "<exact English substring copied from that chunk>"
++    }
++  ],
++  "next_steps": ["..."],
++  "insufficient_evidence": false
++}
++```
++
++System-prompt rules **[R]**:
++1. Use only the provided chunks. Every claim needs a `chunk_id` and a verbatim `support_quote`.
++2. If the chunks don't answer the question, set `insufficient_evidence: true` and say what is missing — do not answer from memory.
++3. Never state penalties, deadlines or amounts that are not in a quote.
++4. Never say "you will win" or predict outcomes.
++
++## 5. Citation verification (the signature feature)
++
++```
++for claim in claims:
++    chunk = retrieved.get(claim.chunk_id)            # 1. was it retrieved?
++    if not chunk: unverified("cited a source we didn't give it")
++    q = normalize(claim.support_quote)                # lowercase, collapse whitespace, strip punctuation
++    if len(q) < 25 or q not in normalize(chunk.text): # 2. is the quote really there?
++        unverified("quote not found in section")
++    for sec in re.findall(r"section\s+(\d+[A-Z]?)", claim.text, re.I):   # 3. section numbers match?
++        if sec != chunk.section: unverified("section mismatch")
++    if chunk.in_force == "repealed": flag("cites repealed law")
++```
++
++What this catches: invented sections, wrong-section citations, fabricated quotes, repealed law. What it does **not** catch: a real quote that is paraphrased misleadingly in the claim text. Optional P1 mitigation: second LLM call "does the quote entail the claim? yes/no" — doubles latency, so P1 only.
++
++## 6. Confidence & uncertainty communication
++
++Avoid fake probabilities. Show evidence coverage instead **[R]**:
++
++| Display | Rule |
++|---|---|
++| ✅ **Verified** (green) | ≥1 claim and all claims verified |
++| ⚠️ **Partly verified** (amber) | Some claims failed — failed ones greyed, labelled "not verified — check with legal aid" |
++| ⛔ **Not enough information** (grey) | `insufficient_evidence` or zero verified claims → show help card prominently |
++
++## 7. Versioning & amendments (designed now, built later)
++
++- Model documents as **work** (the Act) → **expression** (text as of a date) → **section**, following the Akoma Ntoso FRBR-style naming idea [V] https://oasis-open.org/?p=4747
++- Store `valid_from`, `valid_to`, `in_force` per chunk. MVP sets these by hand for ~8 Acts; P3 automates from Gazette notifications.
++
++## 8. Multilingual handling
++
++- Retrieve in English (statutes are English-authoritative per India Code [V]); generate in user language; always show English source quote.
++- Indian-language RAG benchmarks exist (e.g. IndicRAGSuite) [V] https://arxiv.org/pdf/2506.01615 — not evaluated here.
++- Fallback for Telugu quality: Sarvam Translate at ₹2 per 1,000 characters with ₹100 free credits [V] https://docs.sarvam.ai/api-reference-docs/pricing.md ; BHASHINI SDK supports NMT/ASR/TTS but Telugu availability and credential process were not confirmed [V] https://pypi.org/project/bhashini-client-sdk/
++
++## 9. Hallucination-prevention summary
++
++| Layer | Mechanism |
++|---|---|
++| Retrieval | Jurisdiction + persona filter; section chunks |
++| Generation | JSON contract; quote-or-don't-claim; refusal path |
++| Verification | Deterministic quote + section + in-force check |
++| Deterministic tools | Deadlines, eligibility, repeal mapping never come from the LLM |
++| UI | Unverified content visibly degraded; help card always available |
++
++## 10. Research gaps
++- GLM-5.3-Flash Telugu/Hindi quality untested.
++- Full NVIDIA API Trial ToS not read.
++- Exact current per-model rate limits not confirmed from an official NVIDIA page.
+diff --git a/docs/research/COMPETITOR_ANALYSIS.md b/docs/research/COMPETITOR_ANALYSIS.md
+new file mode 100644
+index 0000000..16e1db1
+--- /dev/null
++++ b/docs/research/COMPETITOR_ANALYSIS.md
+@@ -0,0 +1,100 @@
++# Competitor Analysis
++
++**Prepared:** 31 Oct 2026 · All URLs accessed 2026-10-31 unless noted.
++**[V]** = verified from cited source · **[A]** = our analysis/assumption · **[R]** = recommendation
++
++> Rule followed: we do not invent weaknesses. Where a weakness is listed it is either sourced **[V]** or explicitly marked as our analysis **[A]**.
++
++---
++
++## 1. The most important finding
++
++**The Government of India already operates a multilingual, voice-first AI legal assistant — Nyaya Setu.** Any pitch built on "an AI chatbot that explains law in Indian languages" will be compared directly to it, and judges in Hyderabad may know it. Differentiation must come from somewhere else (see §4).
++
++---
++
++## 2. India — direct competitors (citizen-facing)
++
++### 2.1 Nyaya Setu (Ministry of Law & Justice / Digital India BHASHINI Division)
++| Field | Finding |
++|---|---|
++| Website / access | WhatsApp number 7217711814 (shows as "Tech-Law") [V] https://www.digit.in/news/apps/need-legal-advice-governments-nyaya-setu-is-now-available-on-whatsapp-for-free-heres-how-to-use.html (2 Jan 2026) |
++| Purpose | Free legal information, basic advice, guidance on remedies [V] same source |
++| Timeline | First introduced Aug 2025; WhatsApp launch announced Jan 2026 [V] digit.in; AI chatbot + mascot "Dishika" unveiled at the DISHA programme, Vigyan Bhawan [V] https://www.digitalindia.gov.in/press_release/nyaya-setu-ai-chatbot-and-mascot-dishika-unveiled-at-disha-programme-bhashini-enables-real-time-multilingual-translation-during-vice-presidents-address/ ; reported launch date 29 Mar 2026 [V] https://opengovasia.com/india-launches-disha-2-0-to-expand-digital-access-to-justice/ |
++| Technology | Built and owned by Digital India BHASHINI Division; voice-first, multimodal; uses BHASHINI ASR; described as trained on frameworks such as BNS [V] https://www.insightsonindia.com/2026/04/01/nyaya-setu-ai-chatbot/ ; described as hybrid RAG grounding answers in statutory texts [V] opengovasia (secondary source) |
++| Languages | 36 text / 23 voice languages per InsightsonIndia [V]; "22 Indian languages" per Ministry of Law & Justice X post [V] https://x.com/MLJ_GoI/status/2050449343161958519 — **sources disagree** |
++| Pricing | Free (government) |
++| Strengths | Government backing, scale, voice, language breadth, WhatsApp reach [V] |
++| Weaknesses (verified) | In Jan 2026 users reported build errors and menu-only navigation; privacy concerns about WhatsApp were raised [V] https://www.outlookmoney.com/news/free-legal-aid-on-whatsapp-what-users-say-about-governments-legal-aid-chatbot-nyay-setu (3 Jan 2026 — predates the March 2026 AI relaunch; may no longer apply) |
++| Unknown (not verified) | Whether answers show section-level citations users can open; whether it flags repealed law; whether it computes deadlines; whether it checks legal-aid eligibility deterministically **[A]** |
++| Differentiation opportunity | **[R]** Don't compete on language count or voice. Compete on *visible, verifiable* citations, freshness flags, deadlines and generated action documents. |
++
++### 2.2 Tele-Law & Nyaya Bandhu (Department of Justice) — under DISHA 2.0
++- **[V]** Tele-Law connects citizens to panel lawyers for free pre-litigation advice via app, toll-free **14454** and Common Service Centres; Nyaya Bandhu is a pro bono programme for s.12 LSA Act beneficiaries with panels in 23 High Courts. DISHA 2.0 runs 2026–2031 with ₹255 crore. https://opengovasia.com/india-launches-disha-2-0-to-expand-digital-access-to-justice/
++- **Role for us:** Not a competitor — a **routing destination**. **[R]** Our "get help" step should hand off to Tele-Law (14454), NALSA helpline (15100 — short code allocated by DoT [V] https://dot.gov.in/node/27489) and the Telangana SLSA.
++
++### 2.3 Nyaaya (Vidhi Centre for Legal Policy)
++| Field | Finding |
++|---|---|
++| Website | https://nyaaya.org/ |
++| Purpose | Open-access plain-language legal explainers [V] |
++| Features | Explainers by theme, videos, step-by-step guides, sample forms, state-wise info, glossary, FAQs, "Ask Nyaaya" (questions answered by experts/volunteers) [V] |
++| Languages | English, Hindi, Kannada sub-sites [V] |
++| AI | Homepage mentions no chatbot/AI [V] |
++| Pricing | Free; donation-supported [V] |
++| Strengths | Human-written, trustworthy, persona-organised (women, workers, informal workers, etc.) [V] |
++| Gaps | No Telugu sub-site listed [V]; content is static explainers — user must find the right page **[A]** |
++| Opportunity | **[R]** Nyaaya is the quality bar for plain language. Our edge is *situation → applicable sections → action*, in Telugu, with live verification. Nyaaya content licensing was not stated on the homepage [V] — do **not** ingest it without permission. |
++
++### 2.4 Jugalbandi (Microsoft / AI4Bharat / EkStep / OpenNyAI)
++- **[V]** WhatsApp text/voice chatbot for government schemes; launched April 2023; used AI4Bharat models, Azure OpenAI and BHASHINI; covered 10 languages and 171 of ~20,000 schemes at launch; concerns raised about outdated information and incorrect answers. https://www.medianama.com/2023/06/223-jugalbandi-chatbot-rural-india-what-to-know/
++- **Relevance:** Proves the WhatsApp + BHASHINI + LLM pattern; also proves the **freshness and correctness** problems persist. Current status not verified.
++
++### 2.5 Indian Kanoon (incl. API)
++- **[V]** Prepaid API; attribution ("powered by IKanoon") required for display and for RAG/fine-tuning use; no free credits mentioned. https://api.indiankanoon.org/terms/
++- **Audience:** lawyers/researchers. Search-first, not situation-first **[A]**.
++- **Relevance:** Optional future data source for judgments; not needed for MVP.
++
++### 2.6 Commercial lawyer marketplaces (LawRato, Vakilsearch, etc.)
++- Business model is connecting users to paid lawyers / services **[A]** (not re-verified this session). Legal-information content on these sites is usually SEO articles, not primary sources **[A]**.
++
++### 2.7 Other Indian legal AI (professional-facing)
++- Advocase AI (LawyerDesk), Lexlegis.ai, CaseMine etc. target lawyers [V] https://indiaai.gov.in/news/lawyerdesk-advocacy-unveiled-advocase-ai-an-ai-assistant-for-legal-professionals-in-india ; https://apacnewsnetwork.com/tag/first-legal-ai-platform/
++- **Relevance:** Not competing for ordinary citizens.
++
++### 2.8 Hackathon/student projects
++- Many projects named "NyayaSetu"/"Nyaya AI" exist on GitHub, Devfolio and lablab (e.g. FastAPI + FAISS + Groq/Ollama RAG) [V] https://github.com/ShAuRyA-Noodle/NyayaSetu-Offline-Multilingual-AI ; https://devfolio.co/projects/nyaya-ai-33b7
++- **Implication:** "RAG chatbot over Indian law" is the default hackathon project. **[R]** Judges will have seen it.
++
++---
++
++## 3. Global reference points
++
++| Product | Verified finding | Lesson |
++|---|---|---|
++| **DoNotPay** ("robot lawyer") | FTC alleged deceptive claims; never tested whether its outputs matched a human lawyer; did not employ attorneys; settled for $193,000 and must stop misleading claims [V] https://abovethelaw.com/2024/09/chatbot-law-site-donotpay-settles-with-ftc/ | Never market as a lawyer; never overclaim accuracy |
++| **Lexis+ AI / Westlaw AI-AR / Ask Practical Law AI** | Hallucinated on >17% / >34% / >17% of benchmark queries; "misgrounded" citations (real source, doesn't support claim) are a distinct failure [V] https://hai.stanford.edu/news/ai-trial-legal-models-hallucinate-1-out-6-or-more-benchmarking-queries | RAG alone is not enough — you need **claim-to-source verification** |
++
++---
++
++## 4. Competitive positioning matrix
++
++| Capability | Nyaya Setu | Nyaaya | Tele-Law | Typical hackathon RAG bot | **Ours (proposed)** |
++|---|---|---|---|---|---|
++| Free | ✅ [V] | ✅ [V] | ✅ [V] | ✅ | ✅ |
++| Indian languages | ✅ many [V] | 3 [V] | via lawyers | sometimes | Telugu, Hindi, English |
++| Voice | ✅ [V] | audio content [V] | phone [V] | rarely | ❌ (out of 3–4h scope) |
++| Human lawyer | ❌ | Ask Nyaaya [V] | ✅ [V] | ❌ | Routes to Tele-Law/SLSA |
++| Section-level citations shown | unknown | in explainers | n/a | sometimes, unverified | ✅ **verified receipts** |
++| Claim-to-source verification | unknown | human-edited | n/a | ❌ | ✅ |
++| Repealed-law detection (IPC→BNS, old labour Acts→Codes) | unknown | unknown | n/a | ❌ | ✅ |
++| Deadline / limitation calculator | unknown | ❌ (static) | n/a | ❌ | ✅ |
++| Deterministic legal-aid eligibility | unknown | static table [V] | n/a | ❌ | ✅ |
++| Generates ready-to-file draft (RTI / consumer complaint) | unknown | sample forms [V] | n/a | rarely | ✅ (one template) |
++
++"Unknown" means we could not verify it — it is **not** a claim that the competitor lacks it. Before the pitch, someone should spend 10 minutes testing Nyaya Setu on WhatsApp with our demo questions **[R]**.
++
++## 5. Research gaps
++- Hands-on testing of Nyaya Setu's March-2026 AI version was not possible from this environment.
++- LawRato/Vakilsearch pricing and features not verified.
++- Nyaaya's content licence (Terms page) not read.
+diff --git a/docs/research/FEATURE_PRIORITIZATION.md b/docs/research/FEATURE_PRIORITIZATION.md
+new file mode 100644
+index 0000000..1b8be30
+--- /dev/null
++++ b/docs/research/FEATURE_PRIORITIZATION.md
+@@ -0,0 +1,74 @@
++# Feature Prioritization
++
++**Prepared:** 31 Oct 2026 · **Constraint:** 3–4 hours build, small team
++**[R]** This whole document is recommendation, grounded in the other research docs.
++
++## 1. Scoring
++
++Each criterion 1–5. **Effort** and **Risk** are scored so that 5 = *low* effort / *low* risk (higher is always better). Max 35.
++
++| Feature | User impact | Innovation | Feasibility | Data available | Demo value | Effort (5=low) | Risk (5=low) | **Total** | Tier |
++|---|---|---|---|---|---|---|---|---|---|
++| Verified Answer Receipts (citation verifier) | 5 | 5 | 4 | 5 | 5 | 3 | 5 | **32** | **P0** |
++| Free Legal Aid Eligibility Check | 5 | 3 | 5 | 5 | 5 | 5 | 5 | **33** | **P0** |
++| Rights Clock (deadlines) | 5 | 4 | 5 | 4 | 5 | 5 | 4 | **32** | **P0** |
++| Repeal Radar (IPC→BNS, old labour Acts→Codes) | 4 | 5 | 5 | 4 | 5 | 4 | 4 | **31** | **P0** |
++| AI Assistant (hybrid RAG, persona+state scoped) | 5 | 2 | 4 | 4 | 4 | 3 | 3 | **25** | **P0** (host for Receipts) |
++| Multilingual (te/hi/en) + side-by-side source | 5 | 2 | 4 | 4 | 5 | 4 | 3 | **27** | **P0** |
++| Situation-first intake (persona + state) | 4 | 3 | 5 | 5 | 4 | 5 | 5 | **31** | **P0** |
++| Trust/coverage page | 3 | 4 | 5 | 5 | 4 | 5 | 5 | **31** | **P0** |
++| Action Pack (one template: RTI or consumer complaint) | 5 | 4 | 4 | 4 | 5 | 3 | 3 | **28** | **P1** (do in hour 3 if P0 is solid) |
++| Legal Notice Explainer (paste text) | 4 | 3 | 4 | 4 | 4 | 4 | 3 | **26** | P1 |
++| Legal Procedure Guide (3 procedures) | 4 | 2 | 4 | 3 | 3 | 3 | 4 | **23** | P1 |
++| Document X-Ray (photo upload) | 4 | 3 | 2 | 3 | 5 | 2 | 2 | **21** | P1 |
++| Answer entailment check (2nd LLM pass) | 3 | 3 | 4 | 5 | 2 | 3 | 4 | **24** | P1 |
++| Rights Explorer (browse) | 3 | 1 | 4 | 4 | 2 | 3 | 5 | **22** | P2 |
++| Legal Rights Timeline | 3 | 2 | 3 | 3 | 3 | 3 | 4 | **21** | P2 |
++| Voice assistant | 5 | 1 | 2 | 2 | 4 | 1 | 2 | **17** | P3 |
++| Law Amendment Tracker (Gazette watcher) | 4 | 4 | 1 | 2 | 3 | 1 | 3 | **18** | P3 |
++| Accounts + history | 2 | 1 | 3 | 5 | 1 | 2 | 2 | **16** | P3 |
++| Auto jurisdiction detection | 2 | 2 | 3 | 3 | 2 | 3 | 3 | **18** | P3 |
++| Case-law search | 2 | 1 | 2 | 4 | 2 | 2 | 3 | **16** | P3 |
++| Contract Comparison | 2 | 2 | 2 | 3 | 2 | 2 | 3 | **16** | Cut |
++| Legal Scenario Simulator | 1 | 3 | 1 | 1 | 3 | 1 | 1 | **11** | Cut |
++| Legal Evidence Graph | 1 | 3 | 1 | 1 | 3 | 1 | 2 | **12** | Cut |
++
++## 2. Tiers
++
++**P0 — Essential MVP (hours 0–3)**
++1. Persona + state intake (Telangana)
++2. Ask → hybrid RAG → **Verified Answer Receipts**
++3. Telugu / Hindi / English answers with English source pane + translation disclaimer
++4. **Repeal Radar** banner (question + answer)
++5. **Rights Clock** (consumer 2-yr, e-FIR 3-day, RTI 30-day after verification)
++6. **Free Legal Aid check** + help card (TSLSA, NALSA 15100, Tele-Law 14454)
++7. Trust/coverage section
++
++**P1 — High-value upgrades (hour 3–4 only if P0 works end-to-end)**
++- Action Pack (one template) · Legal Notice Explainer (paste) · entailment check
++
++**P2 — Advanced innovations (post-hackathon)**
++- Document X-Ray (image) · Procedure guides · Rights Explorer · Timeline
++
++**P3 — Future roadmap**
++- Voice (BHASHINI) · Gazette-driven amendment tracker · more states · accounts with DPDP consent · case law (AWS SC dataset, CC-BY-4.0)
++
++## 3. Hour-by-hour cut line
++
++| Time | Must be true | If behind, cut |
++|---|---|---|
++| T+1h | Model + embeddings callable; corpus ingested (≥4 Acts) | Drop Telangana tenancy Act (data gap); drop BNS beyond s.318 |
++| T+2h | `/ask` returns verified claims locally; UI shows them | Drop Telugu → Hindi + English |
++| T+3h | Rights Clock + Legal Aid live; deployed | Drop Action Pack |
++| T+3.5h | Demo questions cached; backup recording made | Drop animations / landing polish |
++
++## 4. Demo script (90 seconds)
++
++1. **Worker (Telugu):** "My employer hasn't paid salary for 2 months, under Payment of Wages Act what can I do?" → Repeal Radar: "Payment of Wages Act has been replaced by the Code on Wages, 2019 (in force from 21 Nov 2025)" → verified claims with Code on Wages sections → legal-aid check: "Industrial workmen are a listed category for free legal services (s.12); otherwise income under ₹1,00,000 in Telangana qualifies" → help card. (A shop employee may not be an "industrial workman" — the checker should say "may qualify", not "qualifies".)
++2. **Consumer:** "Bought a phone 23 months ago, it's defective" → verified CPA answer → Rights Clock: "~1 month left to file (s.69); delay may be condoned for sufficient cause" → e-Jagriti / NCH 1915.
++3. **Trick question:** ask something outside the corpus → "Not enough verified information" + help card. *Say:* "We'd rather say 'we don't know' than invent a section."
++4. Click any receipt → English section text on India Code.
++
++## 5. What to say when a judge asks "how is this different from Nyaya Setu?"
++
++"Nyaya Setu is great for reach and languages. We focused on what you can *check*: every sentence is machine-verified against the exact section, we flag laws that were repealed — like the old labour Acts replaced last November — we compute your deadline, and we tell you in 3 taps if you qualify for a free lawyer." (Only say Nyaya Setu lacks a feature if a teammate has tested it.)
+diff --git a/docs/research/FEATURE_RESEARCH.md b/docs/research/FEATURE_RESEARCH.md
+new file mode 100644
+index 0000000..5612c80
+--- /dev/null
++++ b/docs/research/FEATURE_RESEARCH.md
+@@ -0,0 +1,86 @@
++# Feature Research
++
++**Prepared:** 31 Oct 2026 · Complexity rated for a **3–4 hour** build by a small team.
++**[V]** verified · **[A]** assumption/analysis · **[R]** recommendation
++
++Complexity scale: **S** (<30 min) · **M** (30–90 min) · **L** (2h+) · **XL** (not feasible in this hackathon)
++
++---
++
++## 1. New features we recommend (not in the original list)
++
++These come directly from the gaps in `MARKET_GAP_ANALYSIS.md` and are the core of the differentiation.
++
++### 1.1 Verified Answer Receipts ★ (signature feature)
++- **Problem:** AI legal answers can cite real sections that don't support the claim ("misgrounded") [V] https://hai.stanford.edu/news/ai-trial-legal-models-hallucinate-1-out-6-or-more-benchmarking-queries
++- **How it works:** The LLM must answer as a list of short claims, each tagged with a chunk ID it relied on. A deterministic verifier then checks, per claim: (1) the cited chunk ID was actually retrieved, (2) the section number in the claim matches the chunk's section, (3) a supporting quote copied by the model appears verbatim in the chunk. Claims that fail are not shown as fact — they are shown greyed as "couldn't verify". Each verified claim gets a receipt: Act, section, source URL, date retrieved.
++- **Who benefits:** Users; also judges, who can click and check live.
++- **Data:** Section-chunked statutes with stable IDs and source URLs.
++- **Implementation:** Structured JSON output from the LLM + ~40 lines of Python string matching. No extra model.
++- **Exists elsewhere?** Showing citations is common; per-claim verification with visible failure states is not something we found in citizen-facing Indian products **[A]**.
++- **Differentiation:** High. **Complexity:** M. **Risk:** Low — it reduces risk.
++
++### 1.2 Repeal Radar ★
++- **Problem:** Old provisions circulate (IPC 420, Payment of Wages Act) [V] (see MARKET_GAP_ANALYSIS §3).
++- **How it works:** A curated table maps old → new provisions (e.g. IPC 420 → BNS 318(4); Payment of Wages Act → Code on Wages, 2019). Regex detects old references in the user's question *and* in the model's draft answer, and shows a banner: "You mentioned IPC s.420. Since 1 July 2024 the equivalent is BNS s.318(4)." **[A]** BNS commencement date of 1 July 2024 was not re-verified this session — confirm from the Gazette before showing a date.
++- **Data:** Hand-curated mapping for ~15–30 high-frequency provisions, each verified against the new Act text in our corpus. An official MHA correspondence table was **not located** in this research.
++- **Complexity:** S–M. **Differentiation:** High.
++
++### 1.3 Rights Clock ★
++- **Problem:** Rights expire; people don't know the deadlines.
++- **How it works:** Deterministic rules: given an event date, compute the deadline and days left. MVP rules (all [V]): consumer complaint 2 years (CPA s.69); e-FIR signature 3 days (BNSS s.173). RTI 30-day reply **[A]** — standard rule, verify against RTI Act s.7 text in corpus before shipping.
++- **Complexity:** S. **Risk:** Low if each rule cites its section and notes "delay may be condoned" where the law says so.
++
++### 1.4 Action Pack (one template)
++- **Problem:** Users know their right but not how to exercise it.
++- **How it works:** Fill a pre-written template (RTI application or consumer complaint) with user facts; LLM only polishes wording; legal citations are inserted from the verified receipts, never free-generated. Output: copy/download + where to file (e-Jagriti / NCH 1915 [V]; RTI online portal **[A]**).
++- **Complexity:** M. **Risk:** Medium — must be labelled "draft for you to review".
++
++### 1.5 Situation-first intake
++- Persona cards (Tenant / Worker / Consumer / Shop owner) + state selector, instead of an empty chat box. Narrows retrieval to applicable Acts (jurisdiction-aware retrieval for free). **Complexity:** S.
++
++### 1.6 Side-by-side source pane
++- Answer in Telugu/Hindi; original English section text beside it, because India Code states the English version prevails in case of discrepancy [V] https://www.indiacode.nic.in/disclaimer.jsp?locale=en . **Complexity:** S.
++
++---
++
++## 2. Requested core features
++
++| Feature | Problem solved | How it works | Data needed | Similar exists? | Differentiation | Complexity | Legal / privacy risk | Verdict **[R]** |
++|---|---|---|---|---|---|---|---|---|
++| **AI Legal Assistant** | Ask in plain words | RAG over section-chunked corpus + LLM | Statutes | Yes — Nyaya Setu [V], many hackathon bots [V] | Low alone; high with Receipts | M | Wrong answers; "advice" line (Advocates Act) [V] | **P0**, but only as host for Receipts |
++| **Legal Rights Explorer** | Browse rights without a question | Static pages per persona generated from corpus | Statutes | Nyaaya explainers [V] | Low | M | Low | P2 |
++| **Multilingual Assistant** | Language barrier | LLM answers in target language; source text in English | — | Nyaya Setu (many langs) [V] | Low | S | Translation errors — mitigated by side-by-side source | **P0** (Te/Hi/En) |
++| **Jurisdiction Detection** | Wrong state's law | State dropdown (explicit) beats auto-detect | State tag per chunk | — | Medium | S | Low | **P0** as dropdown; auto-detect P3 |
++| **Legal Source Citations** | Traceability | Chunk metadata → link | Source URLs | Common | Low alone | S | Low | **P0** (merged into Receipts) |
++| **Legal Language Simplifier** | Jargon | Paste text → plain explanation with section pointers | — | Common in general LLMs | Low | S | Medium | P1 (reuse assistant) |
++| **Legal Action Plan** | What next | Steps + authority + deadline | Procedures, helplines | Partially (Nyaaya guides [V]) | Medium | M | Medium | **P0** as Rights Clock + routing |
++| **Legal Aid Finder** | Can't afford a lawyer | Eligibility check + SLSA/DLSA/Tele-Law contacts | s.12 rules, Telangana ceiling [V] | Static tables [V] | Medium | S | Low | **P0** |
++
++## 3. Requested advanced features
++
++| Feature | Value to personas | Complexity | Verdict **[R]** | Reason |
++|---|---|---|---|---|
++| **Legal Situation Analyzer** | High | M | P1 | It is essentially intake + retrieval; fold into assistant |
++| **AI Document X-Ray** (photo of rent agreement / notice) | High | L | P1 | OCR of Telugu/English scans is unreliable to demo in time; GLM-5.3-Flash accepts images [V] https://build.nvidia.com/z-ai/glm-5-3-flash/modelcard — try only if P0 done |
++| **Legal Rights Timeline** | Medium | M | P2 | Rights Clock covers the useful part |
++| **Law Amendment Tracker** | High long-term | XL | P3 | Needs Gazette monitoring pipeline; Repeal Radar is the demoable slice |
++| **Legal Scenario Simulator** | Low | L | Cut | Sounds impressive; little real value for someone with an urgent problem **[A]** |
++| **Legal Evidence Graph** | Low | XL | Cut | Same |
++| **Citation Verification Engine** | Very high | M | **P0** | = Verified Answer Receipts |
++| **Voice Assistant** | High for low literacy | L | P3 | Government already voice-first [V]; BHASHINI credentials/ASR language support not verified for Telugu in time |
++| **Legal Aid Eligibility Checker** | High | S | **P0** | Deterministic, zero hallucination risk |
++| **Contract Comparison** | Low for personas | L | Cut | — |
++| **Legal Notice Explainer** | High | M | P1 | Same pipeline as Document X-Ray (text paste version is easy) |
++| **Legal Procedure Guide** | High | M | P1 | Hand-written steps for 3 procedures (consumer complaint, FIR, RTI) |
++
++## 4. Features that sound impressive but offer little user value
++
++- **Scenario Simulator / Evidence Graph** — no persona asked for them; long build; risk of looking like legal prediction.
++- **"Supports 22+ languages"** — the government already claims this; three languages done well with source text alongside beats 22 done badly.
++- **Login / accounts / conversation history** — adds privacy liability (DPDP) and build time; a demo doesn't need it.
++- **Case-law RAG** — noisy for lay users; statutes answer persona questions.
++
++## 5. Research gaps
++- RTI Act s.7 (30-day rule) and BNS commencement date were not re-verified from primary text in this session.
++- BHASHINI Telugu ASR/NMT availability and credential process were not confirmed (SDK docs do not state it) [V] https://pypi.org/project/bhashini-client-sdk/
+diff --git a/docs/research/FINAL_RESEARCH_REPORT.md b/docs/research/FINAL_RESEARCH_REPORT.md
+new file mode 100644
+index 0000000..bd583f0
+--- /dev/null
++++ b/docs/research/FINAL_RESEARCH_REPORT.md
+@@ -0,0 +1,136 @@
++# Final Research Report — Legal Rights Awareness Assistant
++
++**Event:** SMRU Hack Day (Hacktoberfest), Hyderabad — Problem Statement #6
++**Prepared:** 31 Oct 2026 · **Status:** Research complete, awaiting team review. No code written.
++**Verified jurisdiction:** India (central) + Telangana · **Build budget:** 3–4 hours
++
++Legend: **[V]** verified (source in linked docs) · **[A]** assumption · **[R]** recommendation
++
++---
++
++## 1. Problem statement analysis
++
++The brief (`ps photo.png`) asks for basic legal rights explained **in simple language**, **in the user's language**, **traceable to a reliable source**, for citizens, tenants, workers and small shop owners. Our research finds the real pain sits in four places: people can't tell which law applies, the law they've heard of may be repealed, rights expire on deadlines they don't know, and they don't know they may qualify for a free lawyer. AI adds a fifth: confident wrong citations. → `PROJECT_PROBLEM_ANALYSIS.md`
++
++## 2. Research methodology
++
++- Inspected the repo: README, MIT licence, problem-statement image only — nothing to overwrite.
++- ~60 web searches and page fetches (31 Oct 2026), prioritising government sites, statutes, official model cards and primary docs; law-firm/news sources used only to locate or corroborate primary facts and marked as secondary.
++- Every claim tagged [V]/[A]/[R]; research gaps listed at the end of each document.
++- Limits: no user interviews; shell had no access to non-allowlisted sites (robots.txt not checked); Nyaya Setu not hands-on tested.
++
++## 3. Existing solution comparison
++
++| Product | What it is | Takeaway |
++|---|---|---|
++| **Nyaya Setu** (MoLJ / BHASHINI) | Free govt AI legal assistant on WhatsApp; voice-first; 22+ languages (sources differ); AI version unveiled Mar 2026 [V] | **"Multilingual legal chatbot" is not unique.** |
++| Tele-Law / Nyaya Bandhu (DISHA 2.0, 2026–31) | Free lawyer advice via 14454 / CSCs; pro bono panels [V] | Route users here — partner, not competitor |
++| Nyaaya (Vidhi) | Plain-language explainers, EN/HI/KN [V] | Quality bar for plain language; no Telugu site listed [V] |
++| Jugalbandi | WhatsApp + BHASHINI + LLM for schemes; criticised for outdated info [V] | Freshness is a known failure |
++| Indian Kanoon API | Paid case-law API, attribution required [V] | Not needed for MVP |
++| DoNotPay | FTC settlement over "robot lawyer" claims [V] | Never overclaim |
++| Lexis+/Westlaw AI | 17–34%+ hallucination incl. misgrounded citations [V] | RAG ≠ reliability; verify claims |
++
++→ `COMPETITOR_ANALYSIS.md`
++
++## 4. Major market gaps (ranked)
++
++1. **Verifiable answers** (23/25) — per-claim checking against section text
++2. **Stale law** (22/25) — Labour Codes in force 21 Nov 2025 [V]; IPC→BNS [V]; Telangana hours notification Jul 2025 [V]
++3. **Next step + deadline** (22/25) — CPA s.69 two years [V]; e-FIR 3 days [V]
++4. **Free legal aid discovery** (20/25) — s.12 categories; Telangana ₹1 lakh ceiling [V]
++5. **Walk away with a draft** (19/25)
++
++→ `MARKET_GAP_ANALYSIS.md`
++
++## 5. Recommended unique features
++
++| Feature | One-line pitch |
++|---|---|
++| **Verified Answer Receipts** ★ | Every sentence is machine-checked against the exact section; anything unverified is visibly greyed out |
++| **Repeal Radar** ★ | "You said IPC 420 — that's BNS 318(4) now." "Payment of Wages Act? Replaced by the Code on Wages." |
++| **Rights Clock** ★ | Enter a date → "You have 31 days left to file (CPA s.69)" |
++| **Free Legal Aid in 3 taps** | Deterministic s.12 + Telangana ceiling → exact TSLSA / NALSA 15100 / Tele-Law 14454 card |
++| Telugu/Hindi with English source alongside | Your language, the law's authoritative text |
++| Action Pack (P1) | A ready-to-edit RTI / consumer complaint draft |
++
++**Product name suggestion [R]:** something that says *proof*, e.g. "Hakku Proof" (*hakku* = right in Telugu **[A]**) or "Nyaya Receipt". Avoid "Nyaya Setu" — it's taken by the government product.
++
++→ `FEATURE_RESEARCH.md`
++
++## 6. Official legal data sources
++
++- **India Code** (Legislative Dept): official Act PDFs; English prevails; "as is"; no API found → manual download of ~8 Acts [V]. **Gap:** Telangana tenancy Act page has no files [V].
++- **e-Gazette**: commencement notifications (future amendment tracking).
++- **AWS Indian SC Judgments**: CC-BY-4.0, 1950–2025, bi-monthly (future) [V].
++- **Help routing**: Telangana SLSA (040-23446725), NALSA 15100, Tele-Law 14454, NCH 1915 / e-Jagriti [V].
++- **Licensing**: Copyright Act s.52(1)(q) permits reproducing Acts *with commentary* and judgments; s.52(1)(r) permits Indian-language translations of Acts with a mandatory "not authorised by Government" statement [V].
++
++→ `OFFICIAL_LEGAL_DATA_SOURCES.md`, `LEGAL_DATA_LICENSING.md`
++
++## 7. AI and RAG architecture
++
++Section-level chunks with jurisdiction/in-force metadata → persona+state filter → BM25 + NVIDIA multilingual embeddings fused with RRF → GLM generates **strict JSON claims each carrying a chunk ID and verbatim quote** → deterministic verifier (retrieved? quote present? section matches? in force?) → render verified/unverified. Deadlines, eligibility and repeal mapping never come from the LLM. Evidence-coverage badge instead of fake confidence scores.
++
++Model facts: `glm-5-3-flash` listed on NVIDIA's catalog, MIT weights, 1M context, under NVIDIA API Trial ToS [V]; GLM-5 was deprecated Apr 2026 [V] → model ID in env + fallback. Embeddings: `nemotron-3.5-embed-1b` evaluated on Hindi and Telugu [V].
++
++→ `AI_AND_RAG_RESEARCH.md`
++
++## 8. Legal reliability strategy
++
++- Information, not advice: Advocates Act s.29/33/45; Bar Council notice to a non-advocate advisory platform (Sep 2026) [V].
++- Trust framework: claim → section → India Code URL + date; unverified claims degraded; "not enough information" state; help card on every answer; high-risk situations surface emergency/legal-aid contacts first.
++- Privacy: no accounts, no stored questions, PII masking — simplest path under DPDP Rules (notified 14 Nov 2025) [V].
++- Measure, then claim: run a 15-question eval and quote the real number in the pitch.
++
++→ `LEGAL_RELIABILITY_AND_SAFETY.md`
++
++## 9. Global scalability strategy
++
++ISO-3166-2 jurisdiction hierarchy (`IN` → `IN-TG`), one jurisdiction per chunk, a **coverage manifest** per jurisdiction that the UI reads to state exactly what is verified, Akoma Ntoso-style document identity and `valid_from/valid_to` versioning. Coverage is claimed only for verified instruments. → `GLOBAL_JURISDICTION_RESEARCH.md`
++
++## 10. Recommended technology stack
++
++| Keep | Cut for the hackathon |
++|---|---|
++| Next.js + TS + Tailwind + shadcn/ui → Vercel Hobby (non-commercial, free) [V] | PostgreSQL, SQLAlchemy, pgvector, Redis, Supabase |
++| FastAPI → Render free (512 MB, sleeps after 15 min — warm it up) [V] | Local Sentence Transformers (won't fit 512 MB) |
++| NVIDIA API: GLM + nemotron embeddings | Docker, Cloudflare, python-docx, Framer Motion (optional) |
++| rank_bm25 + NumPy, corpus as files; PyMuPDF offline | |
++
++→ `TECH_STACK_VALIDATION.md`, `PRODUCT_ARCHITECTURE_RESEARCH.md`
++
++## 11. MVP feature selection (P0)
++
++Persona+state intake · hybrid RAG with **Verified Answer Receipts** · te/hi/en with source pane · **Repeal Radar** · **Rights Clock** · **Free Legal Aid check** + help card · trust/coverage section. Action Pack only if P0 works by hour 3. → `FEATURE_PRIORITIZATION.md` (includes hour-by-hour cut line and 90-second demo script)
++
++## 12. Future roadmap
++
++P1: Action Pack, legal-notice explainer, entailment check, document X-Ray · P2: procedure guides, rights explorer · P3: voice via BHASHINI, Gazette-driven amendment tracker, more states (AP/Karnataka first), accounts with DPDP consent, case law from the CC-BY SC dataset.
++
++## 13. Potential risks
++
++| Risk | Likelihood | Mitigation |
++|---|---|---|
++| GLM model ID changes / throttling (~40 RPM) | Medium | Env var, fallback model, cached demo answers |
++| Telugu output quality | Medium | Test in hour 1; fall back to Hindi/English; Sarvam Translate backup |
++| PDF section parsing | Medium | ≤6 Acts; hand-fix demo sections |
++| Tenancy Act text unavailable | High | Drop tenant scenario from live demo unless an official source is found |
++| Overclaiming / "advice" | Low if rules followed | Wording rules, no predictions, help routing |
++| Judge compares to Nyaya Setu | High | Lead with verification + freshness + deadlines; test Nyaya Setu beforehand |
++| Render cold start / Wi-Fi | Medium | Warm-up ping; backup recording |
++
++## 14. Final product recommendation
++
++**Build a "proof-first" legal rights assistant for Telangana, not another chatbot.** The government already offers a free multilingual legal chatbot, so breadth can't be the pitch. What nobody demonstrably does — and what the problem statement explicitly demands — is make every answer *checkable*: each sentence verified against the exact current section, repealed law flagged, the deadline computed, and the free-legal-aid route shown. All of that is achievable in 3–4 hours because the hardest-sounding parts (verification, deadlines, eligibility, repeal mapping) are deterministic code, not more AI.
++
++**Decisions needed from the team before building:**
++1. Team size (plan assumes 3–4).
++2. Tenant scenario: find an official Telangana tenancy Act source, or drop it from the demo?
++3. Action Pack template: RTI application or consumer complaint?
++4. Someone tests Nyaya Setu on WhatsApp with the demo questions before the pitch.
++
++---
++
++### Document index
++`PROJECT_PROBLEM_ANALYSIS.md` · `COMPETITOR_ANALYSIS.md` · `MARKET_GAP_ANALYSIS.md` · `FEATURE_RESEARCH.md` · `OFFICIAL_LEGAL_DATA_SOURCES.md` · `LEGAL_DATA_LICENSING.md` · `AI_AND_RAG_RESEARCH.md` · `LEGAL_RELIABILITY_AND_SAFETY.md` · `TECH_STACK_VALIDATION.md` · `GLOBAL_JURISDICTION_RESEARCH.md` · `PRODUCT_ARCHITECTURE_RESEARCH.md` · `FEATURE_PRIORITIZATION.md`
+diff --git a/docs/research/GLOBAL_JURISDICTION_RESEARCH.md b/docs/research/GLOBAL_JURISDICTION_RESEARCH.md
+new file mode 100644
+index 0000000..db94ad4
+--- /dev/null
++++ b/docs/research/GLOBAL_JURISDICTION_RESEARCH.md
+@@ -0,0 +1,71 @@
++# Global Jurisdiction Research
++
++**Prepared:** 31 Oct 2026 · All URLs accessed 2026-10-31.
++**[V]** verified · **[A]** assumption · **[R]** recommendation
++
++> Policy: the architecture is jurisdiction-agnostic; **coverage is claimed only for India (central) + Telangana (state)**, and only for the Acts listed in `OFFICIAL_LEGAL_DATA_SOURCES.md` §5.
++
++---
++
++## 1. Why "one global legal model" doesn't work
++
++- Legal systems differ (common law, civil law, religious/personal law, customary law) **[A]**.
++- Even inside India, the same topic is split between central and state law: tenancy in Telangana is a state Act [V] https://www.indiacode.nic.in/handle/123456789/8607 ; shop working hours are under a state Act and state notifications [V] https://www.indialaw.in/blog/labour/telangana-eases-working-hours-for-commercial-establishments//pdf/ ; legal-aid income ceilings differ by state (₹1,00,000 in Telangana vs ₹3,00,000 in Andhra Pradesh) [V] https://nyaaya.org/legal-explainer/eligibility-for-legal-aid/
++- Labour Codes need matching state notifications for full operation [V] https://ksandk.com/labour-employment/all-four-labour-codes-enforced-from-21-november-2025/ — so "the law" for a worker depends on both central commencement and the state's rules.
++
++## 2. Jurisdiction data model **[R]**
++
++Use ISO 3166-2 style codes as a hierarchy:
++
++```
++IN            (India — central Acts, applies everywhere unless state law differs)
++└─ IN-TG      (Telangana — state Acts, notifications, legal-aid ceiling)
++   └─ IN-TG-HYD (district — DLSA contacts only; future)
++```
++
++Each chunk has exactly one `jurisdiction`. Retrieval filter for a user in Telangana = `{IN, IN-TG}`. A user selecting any other state gets `{IN}` only and a visible notice: "State-specific rules for <state> are not yet verified."
++
++Each jurisdiction record carries a **coverage manifest**:
++
++```json
++{
++  "code": "IN-TG",
++  "verified_instruments": ["Telangana Shops & Establishments Act, 1988"],
++  "known_gaps": ["Tenancy Act text not available on India Code"],
++  "last_reviewed": "2026-10-31",
++  "help_contacts": ["TSLSA", "NALSA 15100", "Tele-Law 14454"]
++}
++```
++
++The UI reads this manifest to say *exactly* what is covered. This is how "global-ready, honestly scoped" is shown to judges.
++
++## 3. Document identity & versioning standards
++
++| Standard | What it gives us | Status |
++|---|---|---|
++| **Akoma Ntoso (OASIS LegalDocML)** | XML vocabulary + naming convention for legislative documents (work/expression/manifestation) [V] https://docs.oasis-open.org/legaldocml/akn-core/v1.0/csd01/part1-vocabulary/akn-core-v1.0-csd01-part1-vocabulary.html ; https://oasis-open.org/?p=4747 | Adopt the *naming idea* for IDs (`/akn/in/act/2019/35/!main~sec_69` style) **[A]** — exact Indian Act numbers to be confirmed per Act |
++| **ELI (European Legislation Identifier)** | Framework for identifying and reusing legislation via stable URIs [V] https://data.europa.eu/en/news-events/news/european-legislation-identifier-making-eu-laws-easier-find-and-reuse | Pattern reference for future EU coverage |
++| **Point-in-time legislation** (e.g. UK legislation.gov.uk) | Versions of law as at a date [V] (third-party tooling exists) https://apify.com/yummy_persimmon_er1/uk-legislation-history | Model for `valid_from`/`valid_to` fields |
++
++## 4. Adding a jurisdiction — checklist **[R]**
++
++1. Identify the official legislation source and its reuse terms (do not assume).
++2. Confirm automated-access permission or plan manual download.
++3. Define the language(s) of authoritative text.
++4. Load only the instruments needed for target personas.
++5. Populate `in_force` / `valid_from` from official commencement notices.
++6. Add help routing (legal aid authority, helplines) from official sites.
++7. Write 15-question eval set; publish results in the coverage manifest.
++8. Only then flip the jurisdiction to "verified" in the UI.
++
++## 5. Candidate next jurisdictions (post-hackathon)
++
++| Candidate | Why | Known data facts |
++|---|---|---|
++| Andhra Pradesh, Karnataka | Neighbouring states, shared Telugu/Kannada users, central law reuse | AP legal-aid ceiling ₹3,00,000; Karnataka ₹1,00,000 [V] nyaaya.org (above); Nyaaya has a Kannada site [V] https://nyaaya.org/ |
++| UK | Strong official versioned legislation source | Licence not verified this session **[A]** |
++| EU | ELI + EUR-Lex | Reuse terms not verified this session **[A]** |
++
++## 6. Research gaps
++- No verification of non-Indian legislation licences in this session.
++- Official Indian Act-number scheme for Akoma Ntoso-style IDs not confirmed.
+diff --git a/docs/research/LEGAL_DATA_LICENSING.md b/docs/research/LEGAL_DATA_LICENSING.md
+new file mode 100644
+index 0000000..4251a79
+--- /dev/null
++++ b/docs/research/LEGAL_DATA_LICENSING.md
+@@ -0,0 +1,63 @@
++# Legal Data Licensing & Reuse
++
++**Prepared:** 31 Oct 2026 · All URLs accessed 2026-10-31.
++**[V]** verified · **[A]** assumption · **[R]** recommendation
++**This is research, not legal advice.** Before any commercial launch, a lawyer should review.
++
++---
++
++## 1. Core rule: public ≠ free to reuse
++
++The research brief is right to insist on this. Indian law has a specific statutory carve-out for legal materials, but it has conditions.
++
++## 2. Copyright Act, 1957 — s.52(1)(q) and (r)
++
++Per the official text on copyright.gov.in [V] https://copyright.gov.in/Copyright_Act_1957/chapter_xi.html , the following are **not** infringement:
++
++| Material | Condition | Implication for us |
++|---|---|---|
++| Matter in an **Official Gazette** | Except an Act of a Legislature | Gazette notifications (e.g. Code commencement) can be reproduced |
++| An **Act of a Legislature** | Only "together with any commentary thereon or any other original matter" | Showing section text **alongside our plain-language explanation** fits this; a bare-text dump with no added matter is less clearly covered **[A]** |
++| Reports of committees/commissions laid before the Legislature | Unless Government prohibits | Not needed for MVP |
++| **Judgments/orders** of courts and tribunals | Unless the court prohibits | Future case-law features OK by default |
++| **s.52(1)(r)** — translations of Acts into Indian languages | Only if no Govt translation exists in that language, or it isn't on sale; must state prominently that the translation "has not been authorised or accepted as authentic by the Government" | **Our Telugu/Hindi outputs must carry this disclaimer** |
++
++**[R] Required UI text on every translated answer:**
++> "This translation is generated for your understanding. It has not been authorised or accepted as authentic by the Government. The English text of the Act prevails."
++(The second sentence reflects India Code's own disclaimer [V] https://www.indiacode.nic.in/disclaimer.jsp?locale=en)
++
++## 3. Source-by-source
++
++| Source | Licence / terms found | Commercial use | Automated access | Our use **[R]** |
++|---|---|---|---|---|
++| **India Code** | Disclaimer: "as is", English prevails; no explicit reuse licence on disclaimer page [V] | Statutory carve-out s.52(1)(q) applies to Acts with commentary [V] | Not addressed [V]; robots.txt not checked | Manual PDF download (~8 files); cite URL + date; no crawling |
++| **e-Gazette** | Not fetched | s.52(1)(q)(i) covers Gazette matter [V] | Unknown | Metadata references only in MVP |
++| **AWS Indian SC Judgments** | **CC-BY-4.0** [V] https://registry.opendata.aws/indian-supreme-court-judgments/ | Allowed with attribution | Yes — public S3 bucket, no AWS account needed [V] | Future; attribute Dattam Labs / source |
++| **Indian Kanoon API** | Prepaid; mandatory "powered by IKanoon" attribution including for RAG/fine-tuning [V] https://api.indiankanoon.org/terms/ | Terms don't address separately [V] | Via paid API only | Not in MVP |
++| **NALSA / SLSA websites** | Not checked | Facts (phone numbers, eligibility rules from the statute) are not copyrightable expression **[A]** | Unknown | Hand-copy a few facts with citation |
++| **Nyaaya** | Licence not stated on homepage [V] | Unknown | Unknown | **Do not ingest.** Link out only. |
++| **Secondary law-firm/news articles** (used in this research) | All-rights-reserved by default **[A]** | No | No | Use only to locate primary sources; never ingest |
++| **GODL-India** (data.gov.in datasets) | We could only find commentary on the 2016 *draft* licence, not its final terms [V] https://www.medianama.com/2016/07/223-medianama-open-data-license/ | Unverified | — | Not needed for MVP; verify final text before use |
++
++## 4. Model & API licensing (do not confuse the two)
++
++| Component | Model-weight licence | Hosted API terms | Practical meaning |
++|---|---|---|---|
++| **GLM-5.3-Flash** on build.nvidia.com | MIT [V] https://build.nvidia.com/z-ai/glm-5-3-flash/modelcard | NVIDIA API **Trial** Terms of Service [V] (same page) | Free trial endpoint is fine for a hackathon demo; production would need a paid/self-hosted route |
++| **Nemotron 3.5 Embed 1B** | OpenMDW-1.1; "ready for commercial or non-commercial use" [V] https://build.nvidia.com/nvidia/nemotron-3_5-embed-1b/modelcard | NVIDIA API Trial Terms [V] | Same as above |
++| **Sarvam APIs** (optional translation/TTS) | n/a | Paid; ₹100 free credits on signup [V] https://docs.sarvam.ai/api-reference-docs/pricing.md | Optional fallback for Telugu |
++
++NVIDIA staff on the developer forum only point to the Trial ToS and state that user and generated content is used "solely to provide users with the API Service" [V] https://forums.developer.nvidia.com/t/clarification-on-trial-api-use/334275 . **[A]** We did not read the full Trial ToS text; whether trial use is restricted to evaluation should be checked before anything beyond the hackathon.
++
++## 5. Checklist before the demo **[R]**
++
++- [ ] Every chunk stores `source_url`, `downloaded_on`, `act_title`, `section`.
++- [ ] Translated answers show the s.52(1)(r) disclaimer.
++- [ ] Source pane shows English section text with our explanation (satisfies "with commentary").
++- [ ] No content from Nyaaya, law-firm blogs, or news sites is in the corpus.
++- [ ] Footer: "Built on official texts from India Code (Legislative Department). Not legal advice."
++
++## 6. Research gaps
++- India Code terms of use / robots.txt not read.
++- Full NVIDIA API Trial ToS not read.
++- Final GODL-India text not located.
+diff --git a/docs/research/LEGAL_RELIABILITY_AND_SAFETY.md b/docs/research/LEGAL_RELIABILITY_AND_SAFETY.md
+new file mode 100644
+index 0000000..b7232af
+--- /dev/null
++++ b/docs/research/LEGAL_RELIABILITY_AND_SAFETY.md
+@@ -0,0 +1,69 @@
++# Legal Reliability & Safety
++
++**Prepared:** 31 Oct 2026 · All URLs accessed 2026-10-31.
++**[V]** verified · **[A]** assumption · **[R]** recommendation
++This document is research, not legal advice.
++
++---
++
++## 1. Regulatory context (India)
++
++### 1.1 Practice of law
++- **[V]** Under the Advocates Act, s.29 only advocates may practise law; s.33 restricts practice before courts/authorities; s.45 makes illegal practice punishable with up to six months' imprisonment. The Supreme Court has read "practice" to include advice and consultancy. In Sept 2026 the Bar Council of Maharashtra & Goa issued a notice to "Society First", a non-advocate legal/advisory platform, threatening s.45 action. https://www.livelaw.in/news-updates/bar-council-of-maharashtra-goa-warns-platform-against-giving-legal-advice-without-advocate-enrolment-548350 (2 Sep 2026)
++- **[A]** The line between general legal *information* and tailored *advice* is not settled for AI tools; the article does not address AI.
++- **[R] Product rules:**
++  - Describe the product as "legal information and guidance to official help" — never "legal advice", "AI lawyer", "consult".
++  - Explain what the law says and who can help; don't tell users what they *should* do in their specific dispute or predict outcomes.
++  - Always surface free, authorised help: Tele-Law (14454), NALSA (15100), Telangana SLSA.
++
++### 1.2 Misleading-claims precedent
++- **[V]** FTC action against DoNotPay for unsubstantiated "robot lawyer" claims; $193,000 settlement. https://abovethelaw.com/2024/09/chatbot-law-site-donotpay-settles-with-ftc/
++- **[R]** No accuracy claims in the pitch beyond what you measured. Say "every claim is checked against the section text", not "100% accurate".
++
++### 1.3 Data protection — DPDP Act 2023 & Rules 2025
++- **[V]** MeitY notified the DPDP Rules on 14 Nov 2025 with phased commencement; obligations include notices stating purposes, data categories and retention; breach notification to the Board and affected persons; verifiable guardian consent for certain processing of children's data. https://en.wikipedia.org/wiki/Digital_Personal_Data_Protection_Rules,_2025 (secondary; exact phase dates not confirmed from primary text)
++- **[R]** Simplest compliant design for the hackathon: **no accounts, no stored conversations, no analytics on question text**. Process in memory, discard. Show a one-line notice: "We don't store your questions."
++- Users will type sensitive facts (domestic violence, caste atrocity, arrests). Don't log request bodies; strip phone numbers/Aadhaar-like 12-digit numbers before sending to the LLM **[R]**.
++
++## 2. Failure modes and handling
++
++| Risk | Example | Handling **[R]** |
++|---|---|---|
++| **Incorrect answer** | Wrong limitation period | Deadlines only from deterministic Rights Clock with cited section; LLM forbidden to state numbers not in a quote |
++| **Outdated law** | "Under the Payment of Wages Act…" | `in_force` metadata; Repeal Radar banner; corpus only contains current Codes for workers. Labour Codes in force from 21 Nov 2025 (two only partly) [V] https://ksandk.com/labour-employment/all-four-labour-codes-enforced-from-21-november-2025/ |
++| **Partly-in-force law** | Citing a Code on Wages section not yet commenced | Tag each section `in_force: yes/partly/no`; verifier warns on non-commenced sections |
++| **Repealed provision** | "IPC 420" | Repeal Radar maps to BNS 318(4) [V] https://news24online.com/india/no-more-420-fraud-cases-know-difference-between-ipc-420-and-bns-3184-new-law-punishment/931933/ |
++| **Conflicting sources** | Central vs state rule; NALSA dashboard vs SLSA notice | Prefer statute text > Gazette > authority website; show both with dates if they conflict. NALSA's Telangana dashboard has stale (2019) figures and inconsistent DLSA counts [V] https://nalsa.gov.in/dashboard/TL |
++| **Jurisdiction uncertainty** | User outside Telangana | State dropdown; if not Telangana, answer central-law parts only and say state rules weren't checked |
++| **Missing evidence** | Question on divorce (not in corpus) | `insufficient_evidence` → "We haven't verified laws on this topic yet" + help card. Never answer from model memory. |
++| **High-risk situation** | Violence, arrest, eviction today, child at risk | Keyword/LLM risk classifier → top-of-screen urgent card: police 112 **[A]** (verify), women's helpline 181 **[A]** (verify), NALSA 15100 [V], before any explanation |
++| **Translation error** | Telugu mistranslates "may" as "must" | English source quote shown beside every claim; s.52(1)(r) disclaimer [V] https://copyright.gov.in/Copyright_Act_1957/chapter_xi.html |
++| **Sensitive documents** (P1 Document X-Ray) | Rent agreement with Aadhaar number | Process in memory; mask 12-digit numbers; don't persist uploads |
++| **Prompt injection via pasted text** | Notice containing "ignore instructions" | Treat pasted text as data; system prompt states this; verifier still enforces quotes from *corpus*, not user text |
++
++## 3. Trust framework
++
++| Principle (from brief) | Mechanism | Where |
++|---|---|---|
++| Every legal claim linked to evidence | Claim → `chunk_id` → section → India Code URL + download date | `AI_AND_RAG_RESEARCH.md` §4 |
++| Citations validated against retrieved sources | Deterministic verifier (retrieved? quote present? section matches? in force?) | §5 there |
++| Unsupported claims not presented as fact | Unverified claims greyed + labelled | UI |
++| Insufficient evidence communicated | Explicit "not enough information" state | UI |
++| System doesn't pretend to be a lawyer | Wording rules, footer, no outcome predictions | §1.1 |
++| Users can find qualified help | Help card on every answer; eligibility checker | P0 feature |
++
++## 4. Required UI copy **[R]**
++
++- Header badge: "Legal information from official texts — not legal advice."
++- Under each answer: "Checked against: *Consumer Protection Act, 2019, s.69* · India Code · downloaded 31 Oct 2026."
++- Translation note (s.52(1)(r)): "This translation has not been authorised or accepted as authentic by the Government. The English text prevails."
++- Help card: "Free help: Tele-Law 14454 · NALSA 15100 · Telangana SLSA 040-23446725" (re-confirm numbers before demo).
++
++## 5. Evaluation plan (30 minutes, before demo) **[R]**
++
++Write 15 test questions (3 per persona + 3 out-of-scope). For each record: retrieved correct section? all claims verified? any repealed law? correct refusal for out-of-scope? Report the actual numbers in the pitch ("13/15 fully verified in our test set") — honest and specific.
++
++## 6. Research gaps
++- Emergency numbers 112 / 181 not re-verified this session.
++- DPDP phase dates not confirmed from MeitY primary text.
++- No Indian court/BCI ruling found specifically on AI legal-information tools.
+diff --git a/docs/research/MARKET_GAP_ANALYSIS.md b/docs/research/MARKET_GAP_ANALYSIS.md
+new file mode 100644
+index 0000000..2c6723b
+--- /dev/null
++++ b/docs/research/MARKET_GAP_ANALYSIS.md
+@@ -0,0 +1,72 @@
++# Market Gap Analysis
++
++**Prepared:** 31 Oct 2026 · Builds on `COMPETITOR_ANALYSIS.md`
++**[V]** verified · **[A]** assumption/analysis · **[R]** recommendation
++
++## 1. Method
++
++Each candidate gap is scored 1–5 on five criteria from the research brief. "Existing solutions" is scored **inversely** (5 = nobody solves it well). Feasibility is judged against a **3–4 hour build**.
++
++| Score | Meaning |
++|---|---|
++| 5 | Strong / severe / wide open / very feasible |
++| 1 | Weak / mild / well served / infeasible in time |
++
++## 2. Gap ranking
++
++| Rank | Gap | User importance | Severity today | Existing solutions (inverse) | Innovation room | 3–4h feasibility | **Total /25** |
++|---|---|---|---|---|---|---|---|
++| 1 | **Verifiable answers** — users (and judges) can't check whether an AI's legal claim is actually in the cited section | 5 | 5 | 4 | 5 | 4 | **23** |
++| 2 | **Stale law** — answers cite repealed provisions (IPC/CrPC, pre-Code labour Acts) | 5 | 5 | 4 | 4 | 4 | **22** |
++| 3 | **"What do I do next, and by when?"** — deadlines and the right authority | 5 | 4 | 4 | 4 | 5 | **22** |
++| 4 | **Free legal aid discovery** — people don't know they qualify | 5 | 4 | 3 | 3 | 5 | **20** |
++| 5 | **Walk away with a document** — a filled RTI/consumer complaint draft | 4 | 4 | 3 | 4 | 4 | **19** |
++| 6 | Telugu-language access with source text alongside | 5 | 4 | 2 | 2 | 4 | **17** |
++| 7 | Document understanding (rent agreement / legal notice photo) | 4 | 4 | 3 | 3 | 2 | **16** |
++| 8 | Voice for low-literacy users | 5 | 4 | 1 | 1 | 1 | **12** |
++| 9 | Privacy of sensitive legal questions | 4 | 3 | 3 | 2 | 3 | **15** |
++
++## 3. Evidence behind the top gaps
++
++### Gap 1 — Verifiable answers
++- **[V]** Even professional legal AI tools produced "misgrounded" answers — correct-sounding claims attached to sources that don't support them; rates >17% to >34% across tools; general chatbots 58–82%. https://hai.stanford.edu/news/ai-trial-legal-models-hallucinate-1-out-6-or-more-benchmarking-queries
++- **[V]** The organisers explicitly require "answers they can trace back to a reliable source" (problem-statement slide in repo).
++- **[A]** Most hackathon RAG bots show a source list but do not check that each sentence is supported.
++- **Why underserved:** showing a link is easy; *proving* the link supports the sentence is not — so few do it.
++
++### Gap 2 — Stale law
++- **[V]** All four Labour Codes in force from 21 Nov 2025 (Code on Wages and Social Security Code only partly) — replacing Payment of Wages, Minimum Wages, Industrial Disputes Acts etc. https://ksandk.com/labour-employment/all-four-labour-codes-enforced-from-21-november-2025/
++- **[V]** Criminal law moved from IPC/CrPC to BNS/BNSS; e.g. IPC s.420 cheating now corresponds to BNS s.318(4). https://news24online.com/india/no-more-420-fraud-cases-know-difference-between-ipc-420-and-bns-3184-new-law-punishment/931933/
++- **[V]** State-level changes too: Telangana's 8 July 2025 Gazette notification allows 10-hour days (48 hr/week cap) in commercial establishments other than shops. https://www.indialaw.in/blog/labour/telangana-eases-working-hours-for-commercial-establishments//pdf/
++- **[V]** Jugalbandi was criticised for outdated information. https://www.medianama.com/2023/06/223-jugalbandi-chatbot-rural-india-what-to-know/
++- **[V]** Even official dashboards go stale: NALSA's Telangana dashboard shows legal-clinic figures "as of March 2019" and internally inconsistent DLSA counts. https://nalsa.gov.in/dashboard/TL
++- **[A]** People still say "420" and "ID Act"; LLMs trained on older text will repeat these.
++
++### Gap 3 — Next steps and deadlines
++- **[V]** Consumer complaint: 2 years from cause of action, delay condonable for sufficient cause (CPA 2019 s.69). https://www.advocatekhoj.com/library/bareacts/consumerprotection2019/69.php
++- **[V]** District Consumer Commission handles claims up to ₹50 lakh (2021 Jurisdiction Rules). https://www.moneylife.in/article/union-govt-revises-pecuniary-jurisdiction-district-consumer-commissions-limit-revised-to-rs50-lakh-from-rs1-crore/66005.html
++- **[V]** e-FIR must be signed within 3 days; zero FIR can be registered at any police station (BNSS s.173). https://azbpartners.com/wp-content/uploads/2024/07/Article-on-BNSS-26-07-2024.pdf
++- **[V]** Consumers can file on e-Jagriti (launched 1 Jan 2025) or call National Consumer Helpline 1915. https://ianslive.in/national-consumer-day-nch-e-jagriti-platforms-ensure-timely-grievance-redressal--20251223135215
++- **Why underserved:** deadlines are deterministic, so an LLM is the wrong tool; most chatbots don't build the deterministic layer **[A]**.
++
++### Gap 4 — Free legal aid
++- **[V]** s.12 LSA Act categories (women, children, SC/ST, persons with disabilities, industrial workmen, persons in custody, disaster victims, trafficking victims, income-based). https://kslsa.kar.nic.in/faq.html
++- **[V]** Telangana income ceiling ₹1,00,000. https://nalsa.gov.in/dashboard/TL ; https://nyaaya.org/legal-explainer/eligibility-for-legal-aid/
++- **[V]** Women qualify regardless of income. https://kslsa.kar.nic.in/faq.html
++- **Insight [A]:** Many users — every woman, every industrial worker — qualify for free legal services without knowing it. A 3-question checker delivers a "wow, I qualify" moment with zero hallucination risk.
++
++## 4. Gaps that sound good but we de-prioritise
++
++| Idea | Why not now |
++|---|---|
++| "Supports 22 languages" | Nyaya Setu already claims this [V]; we can't beat it in 4 hours. Do 3 languages well. |
++| Voice assistant | Government already voice-first [V]; ASR integration + demo risk is high. |
++| Case-law search | Lay users need statutes and procedures; judgments add noise and licensing complexity. |
++| Legal Evidence Graph / Scenario Simulator | Impressive in slides, low real value for a tenant with a deposit dispute **[A]**; high build cost. |
++| Contract comparison | Rarely needed by the four personas **[A]**. |
++
++## 5. The underserved intersection
++
++> **No verified product combines (a) section-level citations that are machine-checked, (b) repealed-law detection, (c) deterministic deadlines and legal-aid eligibility, and (d) a generated next-step document — for Telangana users in Telugu.**
++
++That intersection is our product. See `FEATURE_PRIORITIZATION.md` for what fits in 3–4 hours.
+diff --git a/docs/research/OFFICIAL_LEGAL_DATA_SOURCES.md b/docs/research/OFFICIAL_LEGAL_DATA_SOURCES.md
+new file mode 100644
+index 0000000..75377f1
+--- /dev/null
++++ b/docs/research/OFFICIAL_LEGAL_DATA_SOURCES.md
+@@ -0,0 +1,92 @@
++# Official Legal Data Sources (India-first)
++
++**Prepared:** 31 Oct 2026 · All URLs accessed 2026-10-31.
++**[V]** verified · **[A]** assumption/not verified · **[R]** recommendation
++
++> Licensing and reuse are analysed in detail in `LEGAL_DATA_LICENSING.md`. "Automated access" below means: did we find an explicit statement permitting or forbidding bots/scraping? In most cases we found **none** — that is a gap, not a permission.
++
++---
++
++## 1. Legislation
++
++### 1.1 India Code (Legislative Department, Ministry of Law & Justice)
++| Field | Finding |
++|---|---|
++| URL | https://www.indiacode.nic.in/ |
++| Jurisdiction | Central Acts; State Acts; subordinate legislation uploaded by ministries/departments [V] |
++| Content | Bare Acts as PDFs; disclaimer says PDFs are "exact reproduction of officially adopted text" and **the English version prevails** in a discrepancy [V] https://www.indiacode.nic.in/disclaimer.jsp?locale=en |
++| API | None found **[A]** |
++| Download | Per-Act PDF (e.g. Telangana Shops & Establishments Act, 1988 [V] https://www.indiacode.nic.in/bitstream/123456789/8549/1/act_20_of_1988.pdf) |
++| Update frequency | Not stated **[A]** |
++| Warranty | "as is" and "as available" [V] |
++| Automated access | Not addressed in the disclaimer [V] |
++| **Data gap found** | The Telangana Buildings (Lease, Rent and Eviction) Control Act, 1960 page lists **no files** and no amendments [V] https://www.indiacode.nic.in/handle/123456789/8607 |
++| Integration **[R]** | Manually download the 6–8 PDFs for the MVP; parse once; store section-level text with the PDF URL and download date. Do not crawl. |
++
++### 1.2 e-Gazette of India
++| Field | Finding |
++|---|---|
++| URL | https://egazette.gov.in/ **[A]** (URL from general knowledge; site not fetched this session) |
++| Content | Official notifications — commencement of Codes, rules, amendments |
++| Why it matters | The Labour Codes' commencement (21 Nov 2025) and partial commencement details live in Gazette notifications [V] https://ksandk.com/labour-employment/all-four-labour-codes-enforced-from-21-november-2025/ |
++| Reuse | Copyright Act s.52(1)(q)(i): reproducing matter published in an Official Gazette (other than an Act) is not infringement [V] https://copyright.gov.in/Copyright_Act_1957/chapter_xi.html |
++| Integration **[R]** | P3 — basis for a future amendment tracker. Store commencement notification references as metadata now. |
++
++### 1.3 Telangana Gazette / state departments
++- **[V]** The 8 Jul 2025 working-hours exemption was published in an extraordinary Telangana Gazette under s.73(4) of the Telangana Shops & Establishments Act. https://www.indialaw.in/blog/labour/telangana-eases-working-hours-for-commercial-establishments//pdf/ (secondary summary)
++- Official Telangana Gazette URL not verified **[A]**.
++
++## 2. Judgments (not needed for MVP)
++
++### 2.1 Indian Supreme Court Judgments — AWS Open Data
++| Field | Finding [V] https://registry.opendata.aws/indian-supreme-court-judgments/ |
++|---|---|
++| Content | SC judgments 1950–2025, downloaded from eCourts; English and regional languages |
++| Format | JSON metadata, Parquet, zipped judgments; S3 `indian-supreme-court-judgments`, `ap-south-1`, no AWS account needed |
++| Update | Bi-monthly |
++| Licence | CC-BY-4.0 (dataset); maintainer Dattam Labs |
++| Integration **[R]** | P3. Bulk, clean, licence-clear — best route to case law later. |
++
++### 2.2 eCourts services / judgment search
++- High Court case status: https://hcservices.ecourts.gov.in/ [V] (site exists). API not public **[A]**. Captcha-protected search **[A]**. Do not scrape.
++
++### 2.3 Indian Kanoon API
++- Prepaid, attribution required for display and RAG use [V] https://api.indiankanoon.org/terms/ . Commercial aggregator, not official. P3 if judgments ever needed.
++
++## 3. Legal aid and help routing
++
++| Source | Finding | Use |
++|---|---|---|
++| **NALSA / State SLSA sites** | s.12 eligibility categories [V] https://kslsa.kar.nic.in/faq.html ; Telangana SLSA address: Nyaya Seva Sadan, City Civil Court Compound, Purani Haveli, Hyderabad 500002; phone 040-23446725; income ceiling ₹1,00,000 [V] https://nalsa.gov.in/dashboard/TL | Eligibility checker + contact card. **Caution:** same page has 2019-era statistics and inconsistent DLSA counts [V] — re-confirm phone before demo. |
++| **NALSA helpline 15100** | Short code allocated by DoT [V] https://dot.gov.in/node/27489 | Help card |
++| **Tele-Law** | Free pre-litigation advice from panel lawyers; toll-free 14454; via CSCs [V] https://opengovasia.com/india-launches-disha-2-0-to-expand-digital-access-to-justice/ | Help card |
++| **National Consumer Helpline / e-Jagriti** | NCH 1915; e-Jagriti launched 1 Jan 2025 for consumer case filing [V] https://ianslive.in/national-consumer-day-nch-e-jagriti-platforms-ensure-timely-grievance-redressal--20251223135215 | Consumer action plan |
++| **Nyaaya** | High-quality plain-language explainers; state-wise legal-aid income table [V] https://nyaaya.org/legal-explainer/eligibility-for-legal-aid/ | Reference/cross-check only — not ingested (licence unknown) |
++
++## 4. International / global repositories (for architecture, not MVP)
++
++| Source | Finding | Relevance |
++|---|---|---|
++| **Akoma Ntoso (OASIS LegalDocML)** | OASIS standard XML vocabulary for legislative documents, with a naming convention [V] https://docs.oasis-open.org/legaldocml/akn-core/v1.0/csd01/part1-vocabulary/akn-core-v1.0-csd01-part1-vocabulary.html ; https://oasis-open.org/?p=4747 | Model for our internal document schema (work → expression → section) |
++| **European Legislation Identifier (ELI)** | EU framework for identifying and reusing legislation [V] https://data.europa.eu/en/news-events/news/european-legislation-identifier-making-eu-laws-easier-find-and-reuse | Pattern for stable, versioned law URIs |
++| **legislation.gov.uk** | Point-in-time versions exist (third-party tools use them) [V] https://apify.com/yummy_persimmon_er1/uk-legislation-history ; licence (OGL) **[A]** not verified this session | Gold-standard example of versioned law; P3 jurisdiction |
++
++## 5. Recommended MVP corpus (Telangana personas) **[R]**
++
++| # | Instrument | Source | Persona | Status |
++|---|---|---|---|---|
++| 1 | Consumer Protection Act, 2019 | India Code PDF | Consumer, shop owner | Download |
++| 2 | Bharatiya Nagarik Suraksha Sanhita, 2023 — s.173 only (FIR) | India Code PDF | Citizen | Download; ingest relevant chapter |
++| 3 | Right to Information Act, 2005 | India Code PDF | Citizen | Download |
++| 4 | Code on Wages, 2019 | India Code PDF | Worker | Download; mark which sections are in force (partial commencement) [V] |
++| 5 | Telangana Shops & Establishments Act, 1988 (+ 8 Jul 2025 notification note) | India Code PDF [V] | Worker, shop owner | Download |
++| 6 | Legal Services Authorities Act, 1987 — s.12 | India Code PDF | All | Download |
++| 7 | Telangana Buildings (Lease, Rent & Eviction) Control Act, 1960 | **No file on India Code [V]** | Tenant | Find official alternative (Telangana govt/High Court site) or drop tenant scenario from live demo |
++| 8 | BNS, 2023 — only sections needed for Repeal Radar mapping | India Code PDF | Citizen | Download |
++
++Size estimate **[A]**: under 2,000 section-level chunks — small enough for in-memory search.
++
++## 6. Research gaps
++- No official API found for India Code; robots.txt not checked (shell network blocked to non-allowlisted hosts).
++- e-Gazette and Telangana Gazette not fetched.
++- Official IPC→BNS correspondence table not located; mapping must be verified section by section against BNS text.
+diff --git a/docs/research/PRODUCT_ARCHITECTURE_RESEARCH.md b/docs/research/PRODUCT_ARCHITECTURE_RESEARCH.md
+new file mode 100644
+index 0000000..196c08e
+--- /dev/null
++++ b/docs/research/PRODUCT_ARCHITECTURE_RESEARCH.md
+@@ -0,0 +1,96 @@
++# Product Architecture Research
++
++**Prepared:** 31 Oct 2026
++**[V]** verified · **[A]** assumption · **[R]** recommendation
++
++Three separate architectural areas, as requested. Each area lists **MVP (3–4h)** vs **Later**.
++
++---
++
++## A. Landing Page (marketing)
++
++| Section | Content | MVP? |
++|---|---|---|
++| Hero | "Know your rights. See the exact law. Know your deadline." + Telugu/Hindi toggle + "Ask now" | ✅ (single section on the app's home route) |
++| How it works | 3 steps: Describe → See verified sections → Act (deadline + free help) | ✅ |
++| Trust & transparency | "Every claim checked against official text from India Code" · coverage manifest (what we cover / don't) · "Not legal advice" | ✅ — this is a differentiator, make it visible |
++| Features | Verified Receipts · Repeal Radar · Rights Clock · Free Legal Aid check | ✅ (4 cards) |
++| Resources | Links to Tele-Law, NALSA, e-Jagriti, India Code | ✅ (footer) |
++| Blog / SEO pages | — | Later |
++
++**[R]** For the hackathon the landing page *is* the home route of the frontend app — not a separate site.
++
++## B. Frontend Platform
++
++| Area | Purpose | MVP? |
++|---|---|---|
++| **Persona + state picker** | Tenant / Worker / Consumer / Shop owner; Telangana default | ✅ |
++| **Ask screen** | Text box, language select (te/hi/en), example questions per persona | ✅ |
++| **Answer view** | Verified claims (green ticks), unverified (greyed), evidence badge, Repeal Radar banner | ✅ |
++| **Source pane** | English section text, Act + section, India Code link, downloaded date, translation disclaimer | ✅ |
++| **Rights Clock card** | Event date input → deadline + days left + section cited | ✅ |
++| **Free Legal Aid check** | 3 questions → eligible / maybe / not + TSLSA/NALSA/Tele-Law card | ✅ |
++| **Action Pack** | One template (RTI or consumer complaint) → editable draft + "where to file" | ✅ if time (hour 3) |
++| Document Intelligence (upload notice/agreement) | X-Ray | Later (P1) |
++| Rights Explorer (browse) | Static persona pages | Later (P2) |
++| Conversation history, settings, dashboard | Requires accounts | Later (P3) — deliberately cut for privacy and time |
++
++Routes **[R]**: `/` (landing + picker) · `/ask` · `/legal-aid` · `/coverage`.
++
++## C. Backend Platform
++
++```
++FastAPI (single service)
++├── POST /ask          → repeal_radar → query_rewrite → hybrid_retrieve → generate → verify → assemble
++├── POST /eligibility  → deterministic s.12 rules + state ceiling
++├── POST /deadline     → deterministic rules table
++├── POST /draft        → template fill (+ optional LLM polish) — citations from verified receipts only
++├── GET  /coverage     → jurisdiction manifests
++└── GET  /health       → warm-up ping
++modules/
++├── corpus.py        load corpus.jsonl, embeddings.npy, BM25 at startup
++├── retrieve.py      filter + BM25 + cosine + RRF
++├── llm.py           OpenAI-compatible client → NVIDIA API; model from env; fallback
++├── verify.py        claim verifier (see AI_AND_RAG_RESEARCH.md §5)
++├── repeal.py        regex + repeal_map.json
++├── rules.py         deadlines.json, legal_aid.json
++└── safety.py        PII masking, high-risk detection, rate limit
++scripts/ingest.py    offline: PDFs → sections → metadata → embeddings
++```
++
++| Requested backend area | MVP implementation | Later |
++|---|---|---|
++| Authentication | None (no accounts) | Supabase/Auth.js + DPDP consent |
++| API services | 5 endpoints above | Versioned API |
++| AI inference | NVIDIA API (GLM + embeddings) | Paid/self-hosted |
++| RAG pipeline | In-memory hybrid | pgvector + reranker |
++| Legal knowledge ingestion | Offline script, manual PDFs | Gazette watcher, scheduled re-ingest |
++| Citation verification | `verify.py` deterministic | + entailment check |
++| Document processing | Offline PyMuPDF | Upload OCR (P1) |
++| Jurisdiction management | Manifest JSON + chunk tags | Admin UI |
++| Privacy & security | No storage, PII masking, CORS, rate limit | Audit logging (metadata only), DPDP notices |
++
++## Data flow
++
++```
++[Browser] ──question+persona+state+lang──► [FastAPI /ask]
++                                              │ repeal.py (question)
++                                              │ llm.py (rewrite → English query)
++                                              │ retrieve.py (IN + IN-TG chunks)
++                                              │ llm.py (JSON answer with chunk_id + quote)
++                                              │ verify.py (per-claim)
++                                              │ repeal.py (answer) + rules.py (deadline, aid)
++[Browser] ◄──claims[verified|unverified], sources[], banners[], help_card──┘
++```
++
++## Team split for 3–4 hours (assumes 3–4 people) **[R]**
++
++| Person | Hour 0–1 | Hour 1–2 | Hour 2–3 | Hour 3–4 |
++|---|---|---|---|---|
++| A (data) | Download PDFs, `ingest.py`, section split | Metadata, `in_force`, repeal_map.json | 15-question eval set | Fix failures found by eval |
++| B (backend) | FastAPI skeleton, `llm.py`, test model + Telugu | `retrieve.py`, `/ask` | `verify.py`, `/eligibility`, `/deadline` | Deploy Render, cache demo answers |
++| C (frontend) | Next.js + shadcn, picker, ask screen | Answer view + source pane | Rights Clock + Legal Aid cards | Landing/trust section, deploy Vercel |
++| D (pitch, if 4) | Test Nyaya Setu with demo questions; pitch outline | Action Pack template | Demo script + backup recording | Rehearse |
++
++## Research gaps
++- Team size not confirmed (plan assumes 3–4).
+diff --git a/docs/research/PROJECT_PROBLEM_ANALYSIS.md b/docs/research/PROJECT_PROBLEM_ANALYSIS.md
+new file mode 100644
+index 0000000..6df0eba
+--- /dev/null
++++ b/docs/research/PROJECT_PROBLEM_ANALYSIS.md
+@@ -0,0 +1,62 @@
++# Project Problem Analysis
++
++**Project:** Legal Rights Awareness Assistant — SMRU Hack Day (Hacktoberfest), Hyderabad, Problem Statement #6
++**Prepared:** 31 Oct 2026 · **Verified jurisdiction for this phase:** India (central law) + Telangana (state law)
++**Build constraint:** 3–4 hours of development time, small team
++
++Legend used across all research docs:
++- **[V]** Verified fact, with source URL and access date
++- **[A]** Assumption — not verified, stated so it can be challenged
++- **[R]** Recommendation — our judgement based on the evidence
++
++---
++
++## 1. The problem as set by the organisers
++
++From `ps photo.png` in this repository (the official problem-statement slide):
++
++- **Problem:** Most people don't know their basic legal rights, legal text is long and hard to read, and asking a lawyer even a simple question costs money.
++- **Who it helps:** Citizens, tenants, workers, small shop owners.
++- **What to build:** Help ordinary people understand their basic legal rights **in simple language**, **in the language they speak**, **with answers they can trace back to a reliable source**.
++
++The third requirement — *traceable to a reliable source* — is the one most teams will under-deliver on, and it is the one the judges wrote into the brief. **[R]** Treat it as the product's spine, not a footnote.
++
++## 2. Decomposing the problem
++
++| # | Sub-problem | Evidence it is real | What "solved" looks like |
++|---|---|---|---|
++| 1 | Legal language is hard | Organiser brief; Nyaaya exists specifically to translate law into plain explainers [V] https://nyaaya.org/ (accessed 2026-10-31) | Plain-language answer *plus* the exact statutory text it came from |
++| 2 | People don't know which law applies | Laws are split across central and state statutes; e.g. tenancy in Telangana is governed by a state Act (Telangana Buildings (Lease, Rent and Eviction) Control Act, 1960) [V] https://www.indiacode.nic.in/handle/123456789/8607 | System asks for state + situation, then retrieves only applicable law |
++| 3 | Law changes and old info circulates | All four Labour Codes were brought into force effective 21 Nov 2025, replacing Acts like the Payment of Wages Act and Industrial Disputes Act [V] https://ksandk.com/labour-employment/all-four-labour-codes-enforced-from-21-november-2025/ ; IPC/CrPC replaced by BNS/BNSS (e.g. IPC s.420 → BNS s.318(4)) [V] https://news24online.com/india/no-more-420-fraud-cases-know-difference-between-ipc-420-and-bns-3184-new-law-punishment/931933/ ; Telangana raised daily working-hour limits for commercial establishments to 10 hrs via Gazette of 8 Jul 2025 [V] https://www.indialaw.in/blog/labour/telangana-eases-working-hours-for-commercial-establishments//pdf/ | Answers flag repealed law and point to the current provision |
++| 4 | People don't know what to do next | Rights are time-bound: consumer complaints must be filed within 2 years of the cause of action (CPA 2019 s.69) [V] https://www.advocatekhoj.com/library/bareacts/consumerprotection2019/69.php ; an e-FIR must be signed within 3 days (BNSS s.173) [V] https://azbpartners.com/wp-content/uploads/2024/07/Article-on-BNSS-26-07-2024.pdf | A concrete action plan with deadlines and the right authority |
++| 5 | Language barriers | Telangana's population primarily speaks Telugu and Urdu alongside Hindi/English **[A]** (not re-verified this session) | Answer in Telugu/Hindi with the English statutory text alongside (English text prevails per India Code's own disclaimer [V] https://www.indiacode.nic.in/disclaimer.jsp?locale=en) |
++| 6 | Legal help costs money | Free legal aid exists under s.12 of the Legal Services Authorities Act, 1987 for women, children, SC/ST, industrial workmen and others; Telangana's income ceiling is ₹1,00,000 [V] https://kslsa.kar.nic.in/faq.html ; https://nalsa.gov.in/dashboard/TL ; https://nyaaya.org/legal-explainer/eligibility-for-legal-aid/ | Instant eligibility check + exact contact for the State/District Legal Services Authority |
++| 7 | AI answers can be confidently wrong | Stanford RegLab/HAI found even purpose-built legal AI tools hallucinated on >17% (Lexis+ AI) to >34% (Westlaw AI-AR) of benchmark queries; general chatbots 58–82% [V] https://hai.stanford.edu/news/ai-trial-legal-models-hallucinate-1-out-6-or-more-benchmarking-queries | Every claim checked against retrieved source text; unsupported claims shown as such |
++
++## 3. Personas (from the brief)
++
++Each persona maps to a small, bounded set of laws — this is what makes a 3–4 hour build feasible.
++
++| Persona | Typical question | Laws to cover in MVP |
++|---|---|---|
++| **Tenant** (Hyderabad) | "Landlord won't return my deposit / wants me out in a week" | Telangana Buildings (Lease, Rent and Eviction) Control Act, 1960 — **data gap:** India Code page lists no files [V] https://www.indiacode.nic.in/handle/123456789/8607 |
++| **Worker** | "Employer hasn't paid wages for 2 months" | Code on Wages, 2019 (partly in force from 21 Nov 2025) [V]; Telangana Shops & Establishments Act, 1988 [V] https://www.indiacode.nic.in/bitstream/123456789/8549/1/act_20_of_1988.pdf |
++| **Citizen / consumer** | "Seller won't refund a defective phone" / "Police refused my complaint" | Consumer Protection Act, 2019 [V]; BNSS s.173 (FIR / zero FIR / e-FIR) [V]; RTI Act, 2005 |
++| **Small shop owner** | "What registration/hours rules apply to my shop and staff?" | Telangana Shops & Establishments Act, 1988 + 2025 hours notification [V] |
++| **Everyone** | "Can I get a free lawyer?" | Legal Services Authorities Act, 1987 s.12 [V] |
++
++## 4. What the product is NOT (scope guardrails)
++
++- **Not a lawyer and not legal advice.** In India only enrolled advocates may practise law (Advocates Act s.29/33), and the Supreme Court has read "practice" to include advice; in Sept 2026 the Bar Council of Maharashtra & Goa issued notice to a non-advocate "legal and advisory" platform under s.45 [V] https://www.livelaw.in/news-updates/bar-council-of-maharashtra-goa-warns-platform-against-giving-legal-advice-without-advocate-enrolment-548350 (2026-09-02). **[R]** Position as *legal information + routing to authorised help*, never "your lawyer".
++- **Not global coverage.** Architecture can be jurisdiction-agnostic, but only India/Telangana content is claimed.
++- **Not a case-law research tool.** Judgments add complexity and noise for lay users; statutes + official procedures answer most persona questions **[R]**.
++
++## 5. Problem statement, restated for the team
++
++> A tenant, worker, consumer or shop owner in Telangana describes their situation in Telugu, Hindi or English. Within seconds they get: what the law says (in their language), **the exact section it comes from — verified, current, and linkable**, how long they have to act, and exactly where to go for free help.
++
++## 6. Research gaps
++
++- No authoritative user research (interviews/surveys) with the four personas was possible in this phase.
++- Telugu/Urdu speaker statistics for Telangana were not re-verified.
++- Telangana's tenancy Act text is not downloadable from India Code (empty file list) — an official alternative source must be located before the tenant scenario is demoed.
+diff --git a/docs/research/TECH_STACK_VALIDATION.md b/docs/research/TECH_STACK_VALIDATION.md
+new file mode 100644
+index 0000000..24993ec
+--- /dev/null
++++ b/docs/research/TECH_STACK_VALIDATION.md
+@@ -0,0 +1,84 @@
++# Tech Stack Validation
++
++**Prepared:** 31 Oct 2026 · All URLs accessed 2026-10-31.
++**[V]** verified · **[A]** assumption · **[R]** recommendation
++**Constraint that drives every decision:** 3–4 hours of build time.
++
++---
++
++## 1. Summary
++
++The proposed stack is reasonable for a product, but **too heavy for a 3–4 hour hackathon**. Every extra service is setup time not spent on the differentiator. **[R]** Cut to two deployable pieces: one Next.js app and one FastAPI service, with the corpus shipped as files.
++
++## 2. Component-by-component
++
++| Layer | Proposed | Verdict | Notes |
++|---|---|---|---|
++| Frontend | Next.js + React + TypeScript | ✅ Keep | Team strength (TypeScript/Node) |
++| | Tailwind CSS + shadcn/ui | ✅ Keep | Fast, consistent UI |
++| | Framer Motion | ⚠️ Optional | Only if time remains; zero user value for the core flow |
++| Backend | Python + FastAPI | ✅ Keep | One service: `/ask`, `/eligibility`, `/deadline`, `/draft` |
++| | PostgreSQL + SQLAlchemy | ❌ Cut for MVP | No users, no history, corpus <2,000 chunks **[A]** → JSONL + NumPy in memory |
++| | Redis | ❌ Cut | No sessions or queues; cache demo answers in a Python dict |
++| AI | NVIDIA API (GLM) | ✅ Keep, env-configurable model ID | GLM churn: GLM-5 deprecated 20 Apr 2026 [V] https://forums.developer.nvidia.com/t/urgent-glm-5-deprecation-april-20-2026-replacement-z-ai-glm-5-1-not-available-in-nim-api/366610 ; `glm-5-3-flash` currently listed [V] https://build.nvidia.com/models |
++| | Sentence Transformers (local) | ❌ Replace | Render free = 0.1 CPU / 512 MB RAM [V] https://render.com/docs/llms-full.txt — use NVIDIA-hosted `nemotron-3.5-embed-1b` (Hindi + Telugu evaluated) [V] https://build.nvidia.com/nvidia/nemotron-3_5-embed-1b/modelcard ; precompute corpus embeddings offline |
++| | pgvector | ❌ Defer | NumPy cosine over 2k vectors is milliseconds |
++| | BM25 | ➕ Add | `rank_bm25` pure-Python, tiny |
++| Docs | PyMuPDF | ✅ Keep (offline ingestion only) | |
++| | python-docx | ❌ Cut | No DOCX input in MVP; drafts exported as text/PDF from browser print |
++| Deploy | Vercel (frontend) | ✅ Keep | Hobby plan is free but **non-commercial personal use only**; functions up to 300 s [V] https://vercel.com/docs/plans/hobby — fine for a hackathon |
++| | Render / Railway (backend) | ✅ Render free, with caveat | Spins down after 15 min idle, ~1 min cold start; 750 free instance-hours/month [V] https://render.com/docs/llms-full.txt → **ping it 2 minutes before your demo slot** |
++| | Supabase | ❌ Cut | Not needed without DB/auth. (If used later: 500 MB DB, 2 active free projects, pauses after 1 week idle [V] https://supabase.com/pricing.md) |
++| | Cloudflare | ❌ Cut | No benefit at demo scale |
++| | Docker | ❌ Cut | Render builds Python directly; Dockerfile only if Render's native build fails |
++| | GitHub | ✅ Keep | Repo exists: `wtorque/Legal_rights_awareness_assistant` (MIT licence, README, problem-statement image) |
++
++## 3. Final MVP stack **[R]**
++
++```
++frontend/  Next.js (App Router) + TS + Tailwind + shadcn/ui     → Vercel
++backend/   FastAPI + rank_bm25 + numpy + openai (client) + pymupdf(offline)  → Render free
++data/      corpus.jsonl, embeddings.npy, repeal_map.json, deadlines.json, legal_aid.json, help_contacts.json
++scripts/   ingest.py (run locally once)
++```
++
++External services: **one** — NVIDIA API (LLM + embeddings), via the OpenAI-compatible client at `https://integrate.api.nvidia.com/v1` [V] https://jaesolshin.com/posts/nvidia-nim-api/
++
++Environment variables: `NVIDIA_API_KEY`, `LLM_MODEL` (e.g. `z-ai/glm-5.3-flash` — **confirm exact ID on build.nvidia.com on the day** **[A]**), `LLM_FALLBACK_MODEL`, `EMBED_MODEL`, `ALLOWED_ORIGIN`.
++
++## 4. Bottlenecks & risks
++
++| Risk | Mitigation |
++|---|---|
++| NVIDIA free tier throttling (~40 RPM best-effort) [V] | Cache the rehearsed demo answers; fallback model |
++| Model ID changes/deprecation [V] | Env var + fallback; test at T-0 |
++| Render cold start (~1 min) [V] | Warm-up request before demo; or run backend locally and tunnel |
++| Telugu output quality unknown | Test in hour 1; fall back to Hindi + English if poor; Sarvam Translate as backup (₹100 free credits) [V] https://docs.sarvam.ai/api-reference-docs/pricing.md |
++| PDF section parsing messier than expected | Limit to 5–6 Acts; hand-fix the specific sections used in demo |
++| Venue Wi-Fi | Record a backup screen capture of the full demo |
++
++## 5. Security concerns
++
++- Keep `NVIDIA_API_KEY` server-side only (never in Next.js client bundle).
++- CORS restricted to the Vercel domain.
++- Don't log request bodies (sensitive legal facts; DPDP) — see `LEGAL_RELIABILITY_AND_SAFETY.md`.
++- Rate-limit `/ask` per IP (simple in-memory counter) to protect the shared API key.
++
++## 6. Cost
++
++| Item | Hackathon cost |
++|---|---|
++| Vercel Hobby | ₹0 [V] |
++| Render free | ₹0 [V] |
++| NVIDIA API trial | ₹0 (trial terms) [V] |
++| Sarvam (optional) | ₹0 within ₹100 credits [V] |
++
++## 7. When to bring the cut pieces back (post-hackathon)
++
++| Add | Trigger |
++|---|---|
++| Postgres + pgvector | Corpus > ~50k chunks or multiple jurisdictions |
++| Auth + history | Users ask to save cases (requires DPDP notice/consent flows) |
++| Redis | Real traffic / rate limiting across instances |
++| Reranker | Retrieval eval shows ranking errors |
++| Paid/self-hosted inference | Leaving trial terms; production SLA |
+-- 
+2.43.0
+

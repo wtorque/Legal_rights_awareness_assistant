@@ -40,8 +40,9 @@ The exception handler that renders this envelope is **Missing**; only the classe
 | Assistant | `POST /assistant/answers` | Sourced answer (streaming via SSE) | Planned |
 | Assistant | `GET/DELETE /conversations`, `/conversations/{id}` | History | Planned |
 | Rights | `GET /rights/categories`, `/rights/topics/{id}` | Explorer content | Planned |
-| Documents | `POST /documents`, `GET /documents/{id}`, `DELETE /documents/{id}` | Upload, status, delete | Planned |
-| Documents | `POST /documents/{id}/analysis`, `POST /documents/compare` | Clauses/risks, diff | Planned |
+| Auth | `POST /auth/register`, `/auth/login`, `/auth/refresh`, `GET/PATCH /auth/me`, `POST /auth/password` | Email and password accounts; documents and assistant need `Authorization: Bearer` | Implemented (ADR-024) |
+| Documents | `POST /documents/upload`, `GET /documents`, `GET /documents/{id}`, `GET /documents/{id}/content`, `GET /documents/{id}/file`, `DELETE /documents/{id}` | Upload, list, status, text, original PDF, delete | Implemented (file-backed, no auth; ADR-023) |
+| Documents | `POST /documents/{id}/analysis`, `POST /documents/compare` | Rule-based clauses and labels, clause diff | Implemented (rules only) |
 | Blueprint | `POST /blueprints`, `GET /blueprints/{id}` | Action plans | Planned |
 | Sources | `GET /sources`, `GET /sources/{id}`, `GET /sections/{id}` | Registry and section text | Planned |
 | Jurisdictions | `GET /jurisdictions`, `/jurisdictions/{code}/coverage` | Coverage transparency | Planned |

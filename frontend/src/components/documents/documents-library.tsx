@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { MockDataBadge } from "@/components/ui/mock-data-badge";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { isLiveBackend } from "@/lib/api-config";
 import { formatBytes } from "@/lib/format";
 import { useDocumentsStore } from "@/stores/documents-store";
 import type { DocumentCategory, DocumentRecord } from "@/types/documents";
@@ -57,7 +58,7 @@ export function DocumentsLibrary() {
         eyebrow="Document intelligence"
         title="Documents"
         description="Add a notice, contract or agreement and see each clause in plain language."
-        meta={<MockDataBadge label="Sample analysis · files stay in your browser" />}
+        meta={isLiveBackend ? <Badge variant="neutral">Files are processed on the Aequa server</Badge> : <MockDataBadge label="Sample analysis · files stay in your browser" />}
         actions={
           <Button asChild variant="outline">
             <Link href="/documents/compare">
@@ -142,6 +143,7 @@ export function DocumentsLibrary() {
                     <Badge variant="outline">{categoryLabels[d.category]}</Badge>
                     {d.origin === "sample" ? <MockDataBadge label="Sample" /> : <Badge variant="brand">Your file</Badge>}
                     {d.analyzed && <Badge variant="neutral">Analyzed</Badge>}
+                    {d.needsOcr && <Badge variant="outline">No text layer</Badge>}
                     <Button variant="ghost" size="icon-sm" className="ml-auto" aria-label={`Delete ${d.name}`} onClick={() => setDeleting(d)} disabled={d.origin === "sample"} title={d.origin === "sample" ? "Sample documents can't be deleted" : undefined}>
                       <Trash2 />
                     </Button>
@@ -157,10 +159,10 @@ export function DocumentsLibrary() {
         open={!!deleting}
         onOpenChange={(o) => !o && setDeleting(null)}
         title="Remove this document?"
-        description={deleting ? `“${deleting.name}” will be removed from this browser.` : ""}
+        description={deleting ? (isLiveBackend ? `“${deleting.name}” and its extracted text will be permanently deleted from the server.` : `“${deleting.name}” will be removed from this browser.`) : ""}
         confirmLabel="Remove"
         destructive
-        onConfirm={() => deleting && void remove(deleting.id).then(() => toast.success("Document removed"))}
+        onConfirm={() => deleting && void remove(deleting.id).then(() => toast.success("Document removed"), () => toast.error("Couldn't delete the document. Try again."))}
       />
     </PageContainer>
   );

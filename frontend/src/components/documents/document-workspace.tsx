@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, ExternalLink, FileWarning, ScanSearch } from "lucide-react";
+import { ArrowLeft, ExternalLink, FileWarning, ScanSearch, TriangleAlert } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { PageContainer } from "@/components/layout/page-container";
@@ -10,6 +10,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { MockDataBadge } from "@/components/ui/mock-data-badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { isLiveBackend } from "@/lib/api-config";
 import { documentsService } from "@/services/documents.service";
 import { useDocumentsStore } from "@/stores/documents-store";
 import type { DocumentAnalysis, DocumentContent } from "@/types/documents";
@@ -43,12 +44,19 @@ export function DocumentWorkspace({ id }: { id: string }) {
     if (status !== "ready") return;
     if (!record) return;
     let cancelled = false;
-    documentsService.getContent(id).then(
-      (content) => !cancelled && setDoc({ state: "ready", content, fileUrl: documentsService.getFileUrl(id) }),
+    let objectUrl: string | null = null;
+    Promise.all([documentsService.getContent(id), documentsService.getFileUrl(id)]).then(
+      ([content, fileUrl]) => {
+        objectUrl = fileUrl;
+        if (cancelled) return;
+        setDoc({ state: "ready", content, fileUrl });
+      },
       () => !cancelled && setDoc({ state: "error" }),
     );
     return () => {
       cancelled = true;
+      // Only live-backend URLs are ours to revoke; mock URLs belong to the mock store.
+      if (objectUrl && isLiveBackend) URL.revokeObjectURL(objectUrl);
     };
   }, [id, status, record]);
 
@@ -64,14 +72,15 @@ export function DocumentWorkspace({ id }: { id: string }) {
     ).finally(() => setAnalyzing(false));
   };
 
-  // Sample documents are analyzed on open; user uploads wait for an explicit click.
+  // Samples, and real uploads that have readable text, are analyzed on open. Mock-mode uploads wait for a click.
+  const autoAnalyze = record?.origin === "sample" || (isLiveBackend && record?.needsOcr === false);
   useEffect(() => {
-    if (doc.state === "ready" && record?.origin === "sample" && !started.current) {
+    if (doc.state === "ready" && autoAnalyze && !started.current) {
       started.current = true;
       runAnalysis();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [doc.state, record?.origin]);
+  }, [doc.state, autoAnalyze]);
 
   const selectClause = (clauseId: string | null) => {
     setActiveClause(clauseId);
@@ -87,7 +96,7 @@ export function DocumentWorkspace({ id }: { id: string }) {
         <EmptyState
           icon={FileWarning}
           title="Document not found"
-          description="Uploaded files live in this browser tab and may be gone after a reload."
+          description={isLiveBackend ? "It may have been deleted or may have passed its retention period." : "Uploaded files live in this browser tab and may be gone after a reload."}
           action={<Button asChild><Link href="/documents">Back to documents</Link></Button>}
         />
       </PageContainer>
@@ -107,11 +116,22 @@ export function DocumentWorkspace({ id }: { id: string }) {
         {record?.origin === "sample" && <MockDataBadge label="Sample document · fictional text" />}
       </div>
 
+      {record?.warnings && record.warnings.length > 0 && (
+        <div role="alert" className="flex gap-3 rounded-2xl border border-brass/40 bg-brass/10 p-4 text-sm leading-relaxed">
+          <TriangleAlert className="mt-0.5 size-4 shrink-0 text-brass" aria-hidden />
+          <ul className="space-y-1">
+            {record.warnings.map((w) => (
+              <li key={w}>{w}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <div className="grid min-h-[70dvh] gap-5 lg:grid-cols-2 lg:h-[calc(100dvh-11rem)]">
         <section aria-label="Document preview" className="relative flex min-h-[28rem] flex-col overflow-hidden rounded-3xl border border-border bg-card">
           {doc.state === "loading" ? (
             <Skeleton className="m-4 flex-1 rounded-2xl" />
-          ) : doc.content ? (
+          ) : doc.content && doc.content.pages.some((p) => p.paragraphs.length > 0) ? (
             <DocumentViewer content={doc.content} clauses={analysis?.clauses ?? null} activeClauseId={activeClause} onSelectClause={selectClause} requestedPage={requestedPage} />
           ) : doc.fileUrl ? (
             <iframe src={doc.fileUrl} title={`Preview of ${record?.name}`} className="h-full w-full flex-1" />
@@ -126,18 +146,25 @@ export function DocumentWorkspace({ id }: { id: string }) {
             {analysis ? (
               <AnalysisPanel analysis={analysis} activeClauseId={activeClause} onSelectClause={selectClause} />
             ) : analysisError ? (
-              <ErrorState title="Analysis failed" message="The sample analysis couldn't run." onRetry={runAnalysis} className="m-4" />
+              <ErrorState title="Analysis failed" message="The analysis couldn't run. Try again." onRetry={runAnalysis} className="m-4" />
             ) : analyzing || doc.state === "loading" ? (
               <div className="space-y-3 p-5" aria-busy="true">
                 <Skeleton className="h-8 w-2/3" />
                 <Skeleton className="h-28" />
                 <Skeleton className="h-28" />
               </div>
+            ) : record?.needsOcr ? (
+              <EmptyState
+                icon={FileWarning}
+                title="No readable text"
+                description="This PDF looks like a scan. Analysis needs OCR, which is not available yet. You can still preview and delete it."
+                className="m-4"
+              />
             ) : (
               <EmptyState
                 icon={ScanSearch}
                 title="Ready to analyze"
-                description="This starts a demonstration analysis. Your file is not read or sent anywhere."
+                description={isLiveBackend ? "Reads the text of your file on the Aequa server and labels each clause." : "This starts a demonstration analysis. Your file is not read or sent anywhere."}
                 action={<Button onClick={runAnalysis}>Analyze document</Button>}
                 className="m-4"
               />

@@ -7,6 +7,7 @@ import { useDropzone, type FileRejection } from "react-dropzone";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
+import { isLiveBackend } from "@/lib/api-config";
 import { formatBytes } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { ACCEPTED_TYPES, MAX_UPLOAD_BYTES } from "@/services/documents.service";
@@ -37,7 +38,7 @@ export function UploadZone() {
         const record = await upload(file, category);
         if (record) {
           toast.success(`${file.name} added`, {
-            description: "Stored in this browser only.",
+            description: isLiveBackend ? "Stored on the Aequa server." : "Stored in this browser only.",
             action: { label: "Open", onClick: () => router.push(`/documents/${record.id}`) },
           });
         }
@@ -60,7 +61,7 @@ export function UploadZone() {
         </span>
         <div>
           <p className="font-medium">{isDragActive ? "Drop to add" : "Drag a PDF here"}</p>
-          <p className="mt-1 text-sm text-muted-foreground">PDF only, up to {formatBytes(MAX_UPLOAD_BYTES)}. Files stay in your browser in this prototype.</p>
+          <p className="mt-1 text-sm text-muted-foreground">PDF only, up to {formatBytes(MAX_UPLOAD_BYTES)}. {isLiveBackend ? "Sent to the Aequa server over this connection, kept for 30 days unless you delete it sooner." : "Files stay in your browser in this prototype."}</p>
         </div>
         <div className="flex flex-wrap items-center justify-center gap-3">
           <Select aria-label="Document category" value={category} onChange={(e) => setCategory(e.target.value as DocumentCategory)} className="h-10 w-44 rounded-full">

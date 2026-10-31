@@ -2,6 +2,7 @@ import {
   Bookmark,
   FileSearch,
   HandHelping,
+  Siren,
   Landmark,
   LayoutDashboard,
   LibraryBig,
@@ -48,6 +49,7 @@ export const navSections: NavSection[] = [
   {
     title: "Resources",
     items: [
+      { href: "/emergency", label: "Emergency Help", description: "Official helplines to call now.", icon: Siren },
       { href: "/legal-aid", label: "Legal Aid Finder", description: "Find legal assistance.", icon: HandHelping },
       { href: "/saved", label: "Saved Resources", description: "Items you bookmarked.", icon: Bookmark },
     ],

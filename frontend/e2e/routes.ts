@@ -13,6 +13,7 @@ export const routes = [
   "/knowledge/ks-tenancy-act",
   "/evidence",
   "/legal-aid",
+  "/emergency",
   "/saved",
   "/settings",
   "/help",

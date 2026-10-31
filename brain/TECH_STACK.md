@@ -27,7 +27,7 @@ Versions below come from `frontend/package.json`, `backend/requirements*.txt` an
 | `@xyflow/react` | see package.json | In use | Evidence graph (React Flow) |
 | `shadcn/tailwind.css` import | n/a | In use | Imported by globals.css |
 | PDF.js / React PDF viewer | n/a | Not used | Uploaded PDFs preview in the native viewer (KNOWN_ISSUES #22) |
-| Lenis | n/a | Removed | Not used in the application (ADR-013); still in `landingg/` |
+| Lenis | ^1.3.27 | Implemented | Slow smooth page scrolling in the application (ADR-026); MIT licence |
 | 21st.dev components | n/a | Not present | Copy-in registry; none imported |
 | React Bits | n/a | Not present | Copy-in components; none imported |
 | ESLint | ^9 + `eslint-config-next` 16.4.3 | In use | `npm run lint` passes |

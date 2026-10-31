@@ -1,6 +1,6 @@
 # Animation Guide
 
-Motion supports comprehension and polish; it never gates content or access. Existing plumbing: `lib/motion.ts`, `lib/gsap.ts`, `hooks/use-gsap.ts`, `components/motion/*`. The application uses native scrolling; Lenis is not part of it (ADR-013).
+Motion supports comprehension and polish; it never gates content or access. Existing plumbing: `lib/motion.ts`, `lib/gsap.ts`, `hooks/use-gsap.ts`, `components/motion/*`. The application uses Lenis for slow, eased page scrolling (ADR-026) and is native when reduced motion is set.
 
 ## Choosing the tool
 

@@ -130,3 +130,10 @@ test("keyboard: skip link and sidebar shortcut", async ({ page }) => {
   await page.keyboard.press("Control+b");
   await expect(page.getByRole("button", { name: "Expand sidebar" })).toBeVisible();
 });
+
+test("emergency page lists dialable official numbers", async ({ page }) => {
+  await page.goto("/emergency");
+  await expect(page.getByRole("heading", { name: "Emergency contacts" })).toBeVisible();
+  await expect(page.getByRole("link", { name: /Call .* on 112/ })).toHaveAttribute("href", "tel:112");
+  await expect(page.getByRole("link", { name: /on 15100/ })).toHaveAttribute("href", "tel:15100");
+});

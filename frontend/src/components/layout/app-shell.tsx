@@ -1,5 +1,6 @@
 import { GlobalSearch } from "@/components/search/global-search";
 import { Suspense } from "react";
+import { ScrollProgress } from "@/components/motion/scroll-progress";
 import { MobileDrawer } from "@/components/navigation/mobile-drawer";
 import { Sidebar } from "@/components/navigation/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -11,6 +12,7 @@ import { Topbar } from "./topbar";
 export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <TooltipProvider delayDuration={150}>
+      <ScrollProgress />
       <a
         href="#main"
         className="sr-only z-[100] rounded-full bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground focus:not-sr-only focus:fixed focus:left-4 focus:top-4"

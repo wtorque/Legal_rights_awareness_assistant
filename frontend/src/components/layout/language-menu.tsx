@@ -12,11 +12,11 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { getLanguage, languages } from "@/config/languages";
+import { setResponseLanguage } from "@/lib/set-response-language";
 import { usePreferencesStore } from "@/stores/preferences-store";
 
 export function LanguageMenu() {
   const code = usePreferencesStore((s) => s.responseLanguage);
-  const set = usePreferencesStore((s) => s.set);
   const current = getLanguage(code);
 
   return (
@@ -32,7 +32,7 @@ export function LanguageMenu() {
         <DropdownMenuRadioGroup
           value={code}
           onValueChange={(value) => {
-            set({ responseLanguage: value });
+            setResponseLanguage(value);
             toast.success(`Responses will be in ${getLanguage(value).name}`);
           }}
         >

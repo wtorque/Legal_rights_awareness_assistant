@@ -1,4 +1,5 @@
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
 from pydantic import Field, SecretStr, model_validator
@@ -26,6 +27,16 @@ class Settings(BaseSettings):
     max_request_bytes: int = Field(1_048_576, ge=1024)
     max_upload_bytes: int = Field(10_485_760, ge=1024)
     rate_limit_per_minute: int = Field(60, ge=1)
+    assistant_rate_per_minute: int = Field(20, ge=1)
+    # Blocked or refused requests allowed per user per 10 minutes before the user is paused.
+    assistant_strike_limit: int = Field(3, ge=1)
+    # Off by default: raw model text would reach the user before the safety checks have run.
+    assistant_stream_unverified: bool = False
+
+    llm_provider: Literal["ollama", "nvidia"] = "nvidia"
+    ollama_base_url: str = "http://127.0.0.1:11434"
+    ollama_chat_model: str = "qwen3.5:4b"
+    ollama_timeout_seconds: float = Field(120.0, gt=0)
 
     nvidia_api_key: SecretStr = SecretStr("")
     nvidia_base_url: str = "https://integrate.api.nvidia.com/v1"
@@ -39,6 +50,14 @@ class Settings(BaseSettings):
     storage_dir: str = "storage"
     # Directory of catalogue JSONL corpora (one sub-directory per jurisdiction family).
     catalogue_dir: str = "data/corpus"
+
+    @property
+    def users_dir(self) -> Path:
+        return Path(self.storage_dir) / "users"
+
+    @property
+    def documents_dir(self) -> Path:
+        return Path(self.storage_dir) / "documents"
 
     @model_validator(mode="after")
     def _production_guards(self) -> "Settings":

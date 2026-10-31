@@ -12,6 +12,7 @@ import { Select } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { countries, getCountry } from "@/config/jurisdictions";
 import { languages } from "@/config/languages";
+import { setResponseLanguage } from "@/lib/set-response-language";
 import { clearLocalData, exportLocalData } from "@/lib/local-data";
 import {
   type ConversationRetention,
@@ -59,8 +60,8 @@ export function SettingsView() {
       </SettingsSection>
 
       <SettingsSection id="language" title="Language" description="Interface text and the language answers are written in.">
-        <SettingRow label="Preferred response language" htmlFor="set-resp" hint="Sample answers exist in English, Hindi and Telugu only; other languages fall back to English.">
-          <Select id="set-resp" className="w-52" value={prefs.responseLanguage} onChange={(e) => prefs.set({ responseLanguage: e.target.value })}>
+        <SettingRow label="Preferred response language" htmlFor="set-resp" hint="With the live server the AI writes in this language. Hindi, Telugu and Hinglish were tried; others are untested. Fixed notes exist in English, Hindi, Telugu and Hinglish. Sample answers without a server exist in English, Hindi and Telugu.">
+          <Select id="set-resp" className="w-52" value={prefs.responseLanguage} onChange={(e) => setResponseLanguage(e.target.value)}>
             {languages.map((l) => (
               <option key={l.code} value={l.code}>
                 {l.native} ({l.name})
@@ -70,7 +71,7 @@ export function SettingsView() {
         </SettingRow>
         <SettingRow label="Interface language" htmlFor="set-ui" hint="Only English interface text exists today. Your choice is saved for when translations are added.">
           <Select id="set-ui" className="w-52" value={prefs.interfaceLanguage} onChange={(e) => prefs.set({ interfaceLanguage: e.target.value })}>
-            {languages.map((l) => (
+            {languages.filter((l) => l.code !== "hinglish").map((l) => (
               <option key={l.code} value={l.code}>
                 {l.native} ({l.name})
               </option>
