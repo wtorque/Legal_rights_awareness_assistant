@@ -96,6 +96,7 @@ class DocumentAnalysis(BaseModel):
 class StoredDocument(BaseModel):
     """On-disk shape. Never returned directly."""
 
+    owner_id: str
     record: DocumentRecord
     pages: list[Page]
     analysis: DocumentAnalysis | None = None

@@ -4,7 +4,7 @@ export interface Language {
   native: string;
 }
 
-/** Languages offered for responses. Whether the (future) backend supports each is unverified. */
+/** Languages offered for responses. The live assistant tried Hindi, Telugu and Hinglish on 2026-10-31; the rest are untested. */
 export const languages: Language[] = [
   { code: "en", name: "English", native: "English" },
   { code: "hi", name: "Hindi", native: "हिन्दी" },
@@ -13,6 +13,7 @@ export const languages: Language[] = [
   { code: "kn", name: "Kannada", native: "ಕನ್ನಡ" },
   { code: "bn", name: "Bengali", native: "বাংলা" },
   { code: "mr", name: "Marathi", native: "मराठी" },
+  { code: "hinglish", name: "Hinglish", native: "Hinglish (Roman)" },
 ];
 
 export function getLanguage(code: string): Language {

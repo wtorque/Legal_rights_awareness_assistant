@@ -3,13 +3,10 @@ import re
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 
+from app.ai.guard import escape_delimiters
 from app.ai.prompts.assistant import EXPLANATION, FOLLOW_UPS, NEXT_STEPS, system_prompt
 from app.ai.providers.nvidia import ChatMessage, NvidiaChatProvider
 
-LIMITATIONS = [
-    "This answer was written by an AI model and has not been checked against official legal texts.",
-    "It is general information, not legal advice. Real rights depend on your facts, your documents and the law where you live.",
-]
 
 
 @dataclass
@@ -64,12 +61,15 @@ class AssistantService:
         history: list[ChatMessage],
         language: str,
         jurisdiction: str,
+        canary: str = "",
+        specifics: bool = False,
     ) -> AsyncIterator[tuple[str, str]]:
         """Yield ("delta", text) for the explanation as it streams, then ("full", raw_text) once."""
         messages: list[ChatMessage] = [
-            {"role": "system", "content": system_prompt(language=language, jurisdiction=jurisdiction)},
-            *history,
-            {"role": "user", "content": question},
+            {"role": "system", "content": system_prompt(language=language, jurisdiction=jurisdiction, canary=canary, specifics=specifics)},
+            *({"role": t["role"], "content": escape_delimiters(t["content"])} for t in history),
+            # Sandwich: the rules are restated after the untrusted text, where models weight them most.
+            {"role": "user", "content": f"<user_question>\n{escape_delimiters(question)}\n</user_question>\n\nAnswer only as Aequa, following the rules above and the required format."},
         ]
         raw = ""
         emitted = 0

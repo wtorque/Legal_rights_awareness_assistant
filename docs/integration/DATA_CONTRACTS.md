@@ -104,7 +104,7 @@ All GET, snake_case, under `/api/v1/catalogue`. Models: `backend/app/legal/catal
 
 ## File upload contract (Proposed)
 
-`POST /api/v1/documents` — `multipart/form-data`: field `file` (one file), optional `language`. Response 202:
+**Implemented (ADR-023), differs from the proposal below.** `POST /api/v1/documents/upload` — `multipart/form-data`: `file` (PDF), `category` (`housing|employment|consumer|financial|other`). Response 201 `DocumentRecord` (`id, name, category, pages, size_bytes, uploaded_at, status, origin, analyzed, detected_type, needs_ocr, warnings, failure_reason, history[]`). Processing is synchronous, so `status` is `ready` on return. `POST /documents/{id}/analysis` returns `DocumentAnalysis` (`summary, document_type, clauses[], obligations, missing_information, key_dates, lawyer_questions, legal_references[{text,page,verified:false}], origin:"extracted", generated_by:"rules"`). `Clause.simplified` is nullable. Python: `app/schemas/documents.py`; TypeScript: `types/documents.ts`. Earlier proposal, not built:
 ```ts
 interface DocumentUpload { id: string; status: "queued" | "processing" | "ready" | "failed"; filename: string; size_bytes: number; expires_at: string }
 ```

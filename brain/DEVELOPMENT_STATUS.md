@@ -27,6 +27,42 @@ Last verified: **2026-10-31**. Update this file after every meaningful change. O
 - Verified after the fixes: `tsc` and `lint` pass; Vitest 28/28; `npm run build` (Turbopack) passes; Playwright 44/44; backend `pytest` 26 passed, 1 skipped.
 - Observed, not fixed: a live answer took about 120 s to finish (upstream latency, KNOWN_ISSUES #34). The first attempt hit the 120 s upstream read timeout and the backend retried.
 
+## Documents backend (2026-10-31)
+
+- Added: `POST /api/v1/documents/upload`, list, get, content, file, analysis, compare, delete (`app/api/v1/endpoints/documents.py`, `app/services/documents.py`, `app/repositories/documents.py`, `app/document_intelligence/`). See ADR-023.
+- Frontend: `services/http/documents.http.ts` is used when `NEXT_PUBLIC_API_BASE_URL` is set; library, workspace, upload zone and compare view show server wording, warnings, "No text layer" and nullable explanations.
+- Verified: backend `pytest` 41 passed, 1 skipped (13 new document tests: upload, extraction, analysis, scripts/encrypted/non-PDF/oversize rejection, injection warning, path-traversal ids, filename never in path, compare, retention purge). Live curl against a running uvicorn: upload, analysis and delete worked. Frontend `tsc`, `lint`, Vitest 28/28, `npm run build`, Playwright 44/44 (mock mode).
+- Not verified: the live-mode documents UI in a browser (upload through the dropzone, preview, compare), because only curl was used against the real backend.
+- Not done from the upgrade request: OCR, AI plain-language explanation, authentication, rate limiting, RBAC, audit log, Legal Aid expansion, case matching, emergency contacts, follow-ups, multilingual assistant upgrades, official-source adapters. See KNOWN_ISSUES #46 to #50.
+
+## Assistant guard and Emergency Help (2026-10-31)
+
+- Assistant (backend): `app/ai/guard.py` refuses obvious jailbreak and injection input (English, Hindi, romanised Hindi) before any model call; `app/ai/language.py` picks the reply language from the question's script or Hinglish words (en, hi, te, hinglish); `app/ai/citations.py` validates model output: Articles are confirmed only against the local catalogue (`provisions`), other statute, Act and case references are listed as `unverified_references` and added to limitations, and every URL is replaced with "[link removed]". The prompt now says text in messages is data and asks clarifying questions under follow-ups. The streamed `delta` text is unfiltered; the `final` event is authoritative.
+- Emergency Help: `/emergency` page with call links for 112, 181, 1091, 1098, 1930 and NALSA 15100, data in `frontend/src/mocks/emergency.ts`. Only 15100 was confirmed by fetching the official page (nalsa.gov.in). The others were confirmed from official PIB, MHA, WCD and 112.gov.in text returned by search; 112.gov.in, cybercrime.gov.in and childlineindia.org could not be loaded directly. Each card states what was checked. A separate police number (100) is not listed because it was not verified.
+- Verified: backend `pytest` 56 passed, 1 skipped (15 new assistant tests). Frontend `tsc`, lint, build, Playwright 46/46 (includes an emergency page test).
+- Not verified: no live model call after these changes; the UI does not yet display the confirmed `provisions` from the final event (it only shows the limitation text); Hinglish detection is a word-list heuristic.
+
+## Authentication (2026-10-31)
+
+- Backend: `/api/v1/auth` register, login, refresh, me, profile update, password change (ADR-024). Documents and assistant endpoints now require a bearer token; documents are owner-scoped; users cannot see, analyse, download, compare or delete each other's documents (tested). Token attacks tested: `alg=none`, expired, wrong secret, wrong algorithm, wrong token type, unknown user, garbage.
+- Frontend: `/login` and `/register`, auth store with refresh, gate on all app pages and sign-out in the account menu, only when `NEXT_PUBLIC_API_BASE_URL` is set. Mock mode is unchanged.
+- Verified: backend `pytest` 65 passed, 1 skipped. Frontend `tsc`, lint, Vitest 28/28, build, Playwright 46/46 (mock mode). A real Chromium run against the live backend and frontend: redirect to login, register, upload `lease.pdf`, open it, keyword analysis shown. The only console errors were a Next.js dev-only instant-navigation warning, since fixed with `instant = false` on the app layout; that fix was not re-run in the browser.
+- Not done: Google, phone OTP, password reset email, email verification (KNOWN_ISSUES #54).
+
+## Multilingual (2026-10-31)
+
+- Backend: fixed notes (limitations, unverified-reference warning, refusal) now follow the reply language in English, Hindi, Telugu and Hinglish (`app/ai/messages.py`); other languages fall back to English. The reply language is the script of the question, then Hinglish words, then the saved preference; it is sent back in the `meta` event. The prompt now asks for step titles and follow-ups in the same language and forbids stating days, amounts or deadlines.
+- Frontend: Hinglish added to the language menu; the choice is saved on the account when signed in to a live backend and restored on sign-in (`lib/set-response-language.ts`); Settings uses the same path and its hints are corrected.
+- Verified: backend `pytest` 71 passed, 1 skipped (new parametrised tests for language resolution and fixed text). Live run against the local Ollama `qwen3.5:4b`: Hindi, Telugu and Hinglish questions each returned a final answer in the matching language in 11 to 16 s. Frontend `tsc`, lint, Vitest 28/28, build, Playwright 46/46.
+- Not verified: the prompt change after the live run (no re-run); account language sync in a browser; answer quality (KNOWN_ISSUES #55). The interface (menus, buttons) is still English only.
+
+## Assistant hardening (2026-10-31)
+
+- Added `ai/guard.py` (multi-form input classifier, harmful-intent filter, delimiter escaping), `ai/output_guard.py` (canary and persona-change detection), `ai/grounding.py` (unsupported numbers, guarantees, authority claims, foreign jurisdictions, specifics-asking detector), `ai/pipeline.py` (sentence-level checks on explanation, steps and follow-ups), `core/ratelimit.py`; see ADR-025. No raw model text is streamed by default.
+- Verified: backend `pytest` 146 passed, 1 skipped, including a red-team suite (`tests/security/test_assistant_hardening.py`: 38 override and exfiltration strings, 6 harmful requests, 12 benign questions that must pass, a forged assistant turn in history, hostile long input timing, leak and persona-change detection, number, deadline, citation, guarantee, authority, URL and country removal, abstention in Hindi, rate limit and strike pause). Live run against the local `qwen3.5:4b`: a specifics question answered with the invented part removed, two attacks refused in 0 s without a model call, a Hinglish question answered.
+- Found in the live run: the model wrote "In Indiana" for an Indian user; a check for other countries was added afterwards and covered by a unit test but not re-run live.
+- Not verified: the frontend with no streamed text (typing indicator until the final event) in a browser; accuracy of plain-language claims; any attack not in the fixtures.
+
 ## Completed (frontend, all on mock services)
 
 - Application shell: collapsible sidebar with tooltips and keyboard toggle, mobile drawer, topbar with breadcrumbs, search trigger, jurisdiction and language menus, notifications popover, theme toggle, account menu, shortcuts dialog.

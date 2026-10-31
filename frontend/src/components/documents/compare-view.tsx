@@ -15,6 +15,7 @@ import { MockDataBadge } from "@/components/ui/mock-data-badge";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { isLiveBackend } from "@/lib/api-config";
 import { diffWords } from "@/lib/text-diff";
 import { cn } from "@/lib/utils";
 import { documentsService } from "@/services/documents.service";
@@ -62,12 +63,15 @@ function ChangeCard({ change }: { change: ClauseChange }) {
 
 export function CompareView() {
   const { documents, status, load } = useDocumentsStore();
-  const comparable = documents.filter((d) => d.origin === "sample");
-  const [left, setLeft] = useState("doc-rental");
-  const [right, setRight] = useState("doc-rental-v2");
-  const [request, setRequest] = useState<{ left: string; right: string } | null>({ left: "doc-rental", right: "doc-rental-v2" });
+  const comparable = documents.filter((d) => (isLiveBackend ? d.origin === "upload" && !d.needsOcr : d.origin === "sample"));
+  const [left, setLeft] = useState(isLiveBackend ? "" : "doc-rental");
+  const [right, setRight] = useState(isLiveBackend ? "" : "doc-rental-v2");
+  const [request, setRequest] = useState<{ left: string; right: string } | null>(isLiveBackend ? null : { left: "doc-rental", right: "doc-rental-v2" });
   const [result, setResult] = useState<DocumentComparison | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Live mode has no fixed ids: until the user chooses, default to the two newest comparable documents.
+  const leftId = left || (isLiveBackend ? comparable[1]?.id ?? "" : "");
+  const rightId = right || (isLiveBackend ? comparable[0]?.id ?? "" : "");
   const [filter, setFilter] = useState<"all" | ClauseChange["type"]>("all");
 
   useEffect(() => {
@@ -89,7 +93,7 @@ export function CompareView() {
   const run = () => {
     setResult(null);
     setError(null);
-    setRequest({ left, right });
+    setRequest({ left: leftId, right: rightId });
   };
   const loading = !!request && !result && !error;
 
@@ -106,14 +110,14 @@ export function CompareView() {
       </Button>
       <PageHeader
         title="Compare documents"
-        description="Pick two sample documents to see which clauses were added, removed or changed."
-        meta={<MockDataBadge label="Sample documents · fictional text" />}
+        description={isLiveBackend ? "Pick two of your documents to see which clauses were added, removed or changed." : "Pick two sample documents to see which clauses were added, removed or changed."}
+        meta={isLiveBackend ? undefined : <MockDataBadge label="Sample documents · fictional text" />}
       />
 
       <Card variant="tinted" className="mb-8 grid gap-4 p-5 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
         {([
-          ["Original", left, setLeft],
-          ["Revised", right, setRight],
+          ["Original", leftId, setLeft],
+          ["Revised", rightId, setRight],
         ] as const).map(([label, value, setter]) => (
           <div key={label} className="space-y-1.5">
             <Label htmlFor={`cmp-${label}`}>{label}</Label>
@@ -126,7 +130,7 @@ export function CompareView() {
             </Select>
           </div>
         ))}
-        <Button onClick={run} disabled={left === right || loading}>
+        <Button onClick={run} disabled={!leftId || leftId === rightId || loading}>
           <GitCompareArrows /> Compare
         </Button>
       </Card>

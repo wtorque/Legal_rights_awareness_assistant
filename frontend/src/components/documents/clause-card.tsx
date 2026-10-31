@@ -9,6 +9,10 @@ import { cn } from "@/lib/utils";
 import type { Clause } from "@/types/documents";
 import { FlagBadge } from "./flag-badge";
 
+function excerpt(text: string) {
+  return text.length > 240 ? `${text.slice(0, 240).trimEnd()}…` : text;
+}
+
 const importanceDots = { high: 3, medium: 2, low: 1 } as const;
 
 function Importance({ level }: { level: Clause["importance"] }) {
@@ -50,7 +54,14 @@ export function ClauseCard({ clause, active, onSelect }: ClauseCardProps) {
           <Importance level={clause.importance} />
         </span>
       </div>
-      <p className="mt-3 text-sm leading-relaxed">{clause.simplified}</p>
+      {clause.simplified ? (
+        <p className="mt-3 text-sm leading-relaxed">{clause.simplified}</p>
+      ) : (
+        <>
+          <p className="mt-3 text-sm leading-relaxed">{excerpt(clause.originalText)}</p>
+          <p className="mt-1 text-xs text-muted-foreground">Original wording. No plain-language explanation has been generated for this clause.</p>
+        </>
+      )}
 
       <div className="mt-3 flex flex-wrap items-center gap-3">
         <button
@@ -73,7 +84,7 @@ export function ClauseCard({ clause, active, onSelect }: ClauseCardProps) {
         </blockquote>
       )}
       {source && open && <SourceCard source={source} className="mt-3" />}
-      {!source && open && <p className="mt-3 text-xs text-muted-foreground">No source linked to this clause (placeholder).</p>}
+      {!source && open && <p className="mt-3 text-xs text-muted-foreground">No official source is linked to this clause.</p>}
     </article>
   );
 }

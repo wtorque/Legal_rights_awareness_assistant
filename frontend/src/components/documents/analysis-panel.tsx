@@ -3,6 +3,7 @@
 import { CalendarDays, HelpCircle, Info } from "lucide-react";
 import { useMemo, useState } from "react";
 import { SourceCard } from "@/components/shared/source-card";
+import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { MockDataBadge } from "@/components/ui/mock-data-badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -66,7 +67,11 @@ export function AnalysisPanel({ analysis, activeClauseId, onSelectClause }: Anal
         </div>
       )}
       <div className="flex flex-wrap items-center gap-2">
-        <MockDataBadge label={analysis.demonstrationOnly ? "Example analysis" : "Sample analysis · not verified"} />
+        {analysis.generatedBy === "rules" ? (
+          <Badge variant="neutral">Keyword analysis of your file{analysis.documentType ? ` · ${analysis.documentType}` : ""}</Badge>
+        ) : (
+          <MockDataBadge label={analysis.demonstrationOnly ? "Example analysis" : "Sample analysis · not verified"} />
+        )}
         <p className="text-xs text-muted-foreground">Indicators are reading aids, not legal judgments.</p>
       </div>
 
@@ -142,15 +147,28 @@ export function AnalysisPanel({ analysis, activeClauseId, onSelectClause }: Anal
           </Block>
           <Block title="Clauses with ambiguous wording">
             <List
-              items={analysis.clauses.filter((c) => c.flag === "ambiguous").map((c) => `${c.title}: ${c.simplified}`)}
+              items={analysis.clauses.filter((c) => c.flag === "ambiguous").map((c) => `${c.title}: ${c.simplified ?? c.originalText}`)}
               empty="No ambiguous wording flagged."
             />
           </Block>
         </TabsContent>
 
         <TabsContent value="references" className="space-y-3">
-          {sources.length === 0 ? (
-            <EmptyState icon={HelpCircle} title="No references linked" className="py-10" />
+          {analysis.legalReferences && analysis.legalReferences.length > 0 && (
+            <Block title="Legal references written in this document">
+              <ul className="space-y-2 text-sm">
+                {analysis.legalReferences.map((r) => (
+                  <li key={`${r.page}-${r.text}`} className="flex flex-wrap items-baseline gap-2">
+                    <span className="font-medium">{r.text}</span>
+                    <span className="text-xs text-muted-foreground">page {r.page}</span>
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-3 text-xs text-muted-foreground">Quoted as written. Aequa has not checked that these provisions exist, apply or are still in force.</p>
+            </Block>
+          )}
+          {sources.length === 0 && !analysis.legalReferences?.length ? (
+            <EmptyState icon={HelpCircle} title="No references found" description="No section or article references were found in this document." className="py-10" />
           ) : (
             sources.map((s) => <SourceCard key={s.id} source={s} />)
           )}

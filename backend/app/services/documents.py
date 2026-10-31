@@ -44,7 +44,7 @@ class DocumentService:
         self._repo = repo
         self._max_bytes = max_upload_bytes
 
-    async def upload(self, *, name: str | None, data: bytes, category: Category) -> DocumentRecord:
+    async def upload(self, owner_id: str, *, name: str | None, data: bytes, category: Category) -> DocumentRecord:
         display = clean_name(name)
         if not data:
             raise ValidationFailed("That file is empty")
@@ -65,27 +65,27 @@ class DocumentService:
             history=[_event("uploaded", f"{len(data)} bytes received"), _event("processed", f"{len(pages)} pages read")],
         )
         await run_in_threadpool(self._repo.save_pdf, record.id, data)
-        await run_in_threadpool(self._repo.save, StoredDocument(record=record, pages=pages))
+        await run_in_threadpool(self._repo.save, StoredDocument(owner_id=owner_id, record=record, pages=pages))
         log.info("document_uploaded", document_id=record.id, pages=record.pages, needs_ocr=record.needs_ocr)
         return record
 
-    async def list(self) -> list[DocumentRecord]:
-        return [d.record for d in await run_in_threadpool(self._repo.list)]
+    async def list(self, owner_id: str) -> list[DocumentRecord]:
+        return [d.record for d in await run_in_threadpool(self._repo.list, owner_id)]
 
-    async def get(self, document_id: str) -> DocumentRecord:
-        return (await run_in_threadpool(self._repo.get, document_id)).record
+    async def get(self, owner_id: str, document_id: str) -> DocumentRecord:
+        return (await run_in_threadpool(self._repo.get, document_id, owner_id)).record
 
-    async def content(self, document_id: str) -> DocumentContent:
-        doc = await run_in_threadpool(self._repo.get, document_id)
+    async def content(self, owner_id: str, document_id: str) -> DocumentContent:
+        doc = await run_in_threadpool(self._repo.get, document_id, owner_id)
         links = {pid: c.id for c in (doc.analysis.clauses if doc.analysis else []) for pid in c.paragraph_ids}
         pages = [Page(number=p.number, paragraphs=[Paragraph(id=q.id, text=q.text, clause_id=links.get(q.id)) for q in p.paragraphs]) for p in doc.pages]
         return DocumentContent(document_id=document_id, pages=pages)
 
-    async def pdf_path(self, document_id: str) -> Path:
-        return await run_in_threadpool(self._repo.pdf_path, document_id)
+    async def pdf_path(self, owner_id: str, document_id: str) -> Path:
+        return await run_in_threadpool(self._repo.pdf_path, document_id, owner_id)
 
-    async def analysis(self, document_id: str) -> DocumentAnalysis:
-        doc = await run_in_threadpool(self._repo.get, document_id)
+    async def analysis(self, owner_id: str, document_id: str) -> DocumentAnalysis:
+        doc = await run_in_threadpool(self._repo.get, document_id, owner_id)
         if doc.analysis:
             return doc.analysis
         if doc.record.needs_ocr:
@@ -110,10 +110,10 @@ class DocumentService:
         log.info("document_analyzed", document_id=document_id, clauses=len(analysis.clauses))
         return analysis
 
-    async def compare(self, left_id: str, right_id: str) -> DocumentComparison:
+    async def compare(self, owner_id: str, left_id: str, right_id: str) -> DocumentComparison:
         if left_id == right_id:
             raise ValidationFailed("Choose two different documents")
-        left, right = await self.analysis(left_id), await self.analysis(right_id)
+        left, right = await self.analysis(owner_id, left_id), await self.analysis(owner_id, right_id)
         changes = compare_clauses(
             [ClauseText(c.title, c.original_text) for c in left.clauses],
             [ClauseText(c.title, c.original_text) for c in right.clauses],
@@ -123,6 +123,6 @@ class DocumentService:
             changes=[ClauseChange(type=c.type, title=c.title, before=c.before, after=c.after) for c in changes],
         )
 
-    async def delete(self, document_id: str) -> None:
-        await run_in_threadpool(self._repo.delete, document_id)
+    async def delete(self, owner_id: str, document_id: str) -> None:
+        await run_in_threadpool(self._repo.delete, document_id, owner_id)
         log.info("document_deleted", document_id=document_id)

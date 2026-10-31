@@ -2,6 +2,8 @@
 import pymupdf
 import pytest
 
+from tests.conftest import register
+
 pytestmark = pytest.mark.asyncio
 
 FICTIONAL = [
@@ -27,8 +29,8 @@ def make_pdf(lines: list[str], *, blank: bool = False) -> bytes:
 
 
 @pytest.fixture(autouse=True)
-def storage(settings_env, tmp_path):
-    settings_env(STORAGE_DIR=str(tmp_path))
+async def signed_in(client):
+    client.headers.update(await register(client))
 
 
 async def upload(client, data: bytes, name: str = "lease.pdf", category: str = "housing"):
@@ -134,8 +136,28 @@ async def test_purge_removes_expired_documents(client, tmp_path):
     record = (await upload(client, make_pdf(FICTIONAL))).json()
     repo = DocumentRepository(tmp_path / "documents")
     assert repo.purge_older_than(30) == 0
-    stored = repo.get(record["id"])
+    owner = (await client.get("/api/v1/auth/me")).json()["id"]
+    stored = repo.get(record["id"], owner)
     stored.record.uploaded_at = datetime.now(UTC) - timedelta(days=31)
     repo.save(stored)
     assert repo.purge_older_than(30) == 1
     assert (await client.get("/api/v1/documents")).json() == []
+
+
+async def test_other_users_cannot_read_analyse_download_compare_or_delete(client):
+    mine = (await upload(client, make_pdf(FICTIONAL))).json()["id"]
+    other = {"Authorization": (await register(client, "other@example.com"))["Authorization"]}
+    paths = [("get", f"/api/v1/documents/{mine}"), ("get", f"/api/v1/documents/{mine}/content"), ("get", f"/api/v1/documents/{mine}/file"),
+             ("post", f"/api/v1/documents/{mine}/analysis"), ("delete", f"/api/v1/documents/{mine}")]
+    for method, path in paths:
+        assert (await client.request(method, path, headers=other)).status_code == 404, path
+    assert (await client.get("/api/v1/documents", headers=other)).json() == []
+    theirs = (await client.post("/api/v1/documents/upload", headers=other, files={"file": ("t.pdf", make_pdf(FICTIONAL), "application/pdf")})).json()["id"]
+    assert (await client.post("/api/v1/documents/compare", headers=other, json={"left_id": mine, "right_id": theirs})).status_code == 404
+    assert (await client.get(f"/api/v1/documents/{mine}")).status_code == 200  # still mine
+
+
+async def test_documents_require_sign_in(client):
+    client.headers.pop("Authorization")
+    assert (await client.get("/api/v1/documents")).status_code == 401
+    assert (await upload(client, make_pdf(FICTIONAL))).status_code == 401

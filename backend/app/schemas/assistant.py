@@ -35,7 +35,10 @@ class StructuredAnswer(BaseModel):
     next_steps: list[NextStep]
     limitations: list[str]
     follow_ups: list[str]
-    provisions: list[dict] = Field(default_factory=list)
+    provisions: list[dict] = Field(default_factory=list)  # only Articles confirmed in the local catalogue
+    unverified_references: list[str] = Field(default_factory=list)  # cited by the model, removed from the answer
+    removed_details: int = 0
+    grounding: Literal["none", "partial"] = "none"  # partial = at least one Article confirmed in the local catalogue
 
 
 class Answer(BaseModel):

@@ -37,7 +37,12 @@ Status per [BRAIN](BRAIN.md) vocabulary. Verified 2026-10-31: `tsc`, `lint`, `bu
 | Upload (PDF only, 10 MB, progress), library, search, filters, delete | Implemented (mock); files stay in the browser |
 | Viewer: pages, zoom, search, clause highlighting | Implemented for fictional sample documents; uploaded files use the browser's PDF viewer |
 | Analysis panel: summary, clauses, obligations, gaps, dates, references, lawyer questions, chart | Implemented (mock). For uploaded files it shows a fixed demonstration and says so |
-| Document comparison (added, removed, modified, word diff) | Implemented (mock, sample documents only) |
+| Document comparison (added, removed, modified, word diff) | Implemented: samples in mock mode; real uploads in live mode via backend clause matching |
+| Real PDF upload, validation, text extraction, storage, delete, retention purge (live mode) | Implemented (file-backed, no auth, no OCR) |
+| Rule-based clause labels, dates, quoted citations, gaps (live mode) | Implemented (keyword rules; no AI explanation; citations unverified) |
+| Assistant input guard, reply-language resolution (en, hi, te, hinglish), output citation validation | Implemented (pattern based; no live model test) |
+| Emergency contacts page with call links | Implemented (static, verified 2026-10-31; no location awareness) |
+| OCR for scanned PDFs, AI plain-language clause explanation, verified legal-section linking | Missing |
 | Real text extraction, OCR, clause extraction | Missing |
 | Retention / deletion job | Missing (preference UI only) |
 

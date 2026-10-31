@@ -1,9 +1,11 @@
 from fastapi import APIRouter, Depends, File, Form, UploadFile
 from fastapi.responses import FileResponse, Response
 
+from app.api.deps import current_user
 from app.core.config import Settings, get_settings
 from app.core.exceptions import ValidationFailed
 from app.repositories.documents import DocumentRepository
+from app.schemas.auth import User
 from app.schemas.documents import (
     Category, CompareRequest, DocumentAnalysis, DocumentComparison, DocumentContent, DocumentRecord,
 )
@@ -22,6 +24,7 @@ def get_document_service(settings: Settings = Depends(get_settings)) -> Document
 async def upload_document(
     file: UploadFile = File(...),
     category: Category = Form("other"),
+    user: User = Depends(current_user),
     service: DocumentService = Depends(get_document_service),
     settings: Settings = Depends(get_settings),
 ) -> DocumentRecord:
@@ -31,32 +34,32 @@ async def upload_document(
         data.extend(chunk)
         if len(data) > settings.max_upload_bytes:
             raise ValidationFailed(f"That file is larger than {settings.max_upload_bytes // (1024 * 1024)} MB")
-    return await service.upload(name=file.filename, data=bytes(data), category=category)
+    return await service.upload(user.id, name=file.filename, data=bytes(data), category=category)
 
 
 @router.get("")
-async def list_documents(service: DocumentService = Depends(get_document_service)) -> list[DocumentRecord]:
-    return await service.list()
+async def list_documents(user: User = Depends(current_user), service: DocumentService = Depends(get_document_service)) -> list[DocumentRecord]:
+    return await service.list(user.id)
 
 
 @router.post("/compare")
-async def compare_documents(body: CompareRequest, service: DocumentService = Depends(get_document_service)) -> DocumentComparison:
-    return await service.compare(body.left_id, body.right_id)
+async def compare_documents(body: CompareRequest, user: User = Depends(current_user), service: DocumentService = Depends(get_document_service)) -> DocumentComparison:
+    return await service.compare(user.id, body.left_id, body.right_id)
 
 
 @router.get("/{document_id}")
-async def get_document(document_id: str, service: DocumentService = Depends(get_document_service)) -> DocumentRecord:
-    return await service.get(document_id)
+async def get_document(document_id: str, user: User = Depends(current_user), service: DocumentService = Depends(get_document_service)) -> DocumentRecord:
+    return await service.get(user.id, document_id)
 
 
 @router.get("/{document_id}/content")
-async def get_content(document_id: str, service: DocumentService = Depends(get_document_service)) -> DocumentContent:
-    return await service.content(document_id)
+async def get_content(document_id: str, user: User = Depends(current_user), service: DocumentService = Depends(get_document_service)) -> DocumentContent:
+    return await service.content(user.id, document_id)
 
 
 @router.get("/{document_id}/file")
-async def get_file(document_id: str, service: DocumentService = Depends(get_document_service)) -> FileResponse:
-    path = await service.pdf_path(document_id)
+async def get_file(document_id: str, user: User = Depends(current_user), service: DocumentService = Depends(get_document_service)) -> FileResponse:
+    path = await service.pdf_path(user.id, document_id)
     # Served as an attachment-safe PDF: sandboxed so nothing inside can run in the API origin.
     return FileResponse(path, media_type="application/pdf", headers={
         "Content-Disposition": "inline; filename=document.pdf",
@@ -65,11 +68,11 @@ async def get_file(document_id: str, service: DocumentService = Depends(get_docu
 
 
 @router.post("/{document_id}/analysis")
-async def analyze_document(document_id: str, service: DocumentService = Depends(get_document_service)) -> DocumentAnalysis:
-    return await service.analysis(document_id)
+async def analyze_document(document_id: str, user: User = Depends(current_user), service: DocumentService = Depends(get_document_service)) -> DocumentAnalysis:
+    return await service.analysis(user.id, document_id)
 
 
 @router.delete("/{document_id}", status_code=204)
-async def delete_document(document_id: str, service: DocumentService = Depends(get_document_service)) -> Response:
-    await service.delete(document_id)
+async def delete_document(document_id: str, user: User = Depends(current_user), service: DocumentService = Depends(get_document_service)) -> Response:
+    await service.delete(user.id, document_id)
     return Response(status_code=204)

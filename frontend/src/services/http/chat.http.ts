@@ -2,6 +2,7 @@ import { API_BASE_URL } from "@/lib/api-config";
 import type { ChatStreamEvent, SendMessageRequest } from "@/types/chat";
 import type { StructuredAnswer } from "@/types/legal";
 import { ServiceError } from "../errors";
+import { authHeader } from "./auth-header";
 import type { ChatService } from "../chat.service";
 import { mockChatService, saveExchange } from "../mock/chat.mock";
 import { readSse } from "./sse";
@@ -59,7 +60,7 @@ export const httpChatService: ChatService = {
     try {
       response = await fetch(`${API_BASE_URL}/api/v1/assistant/answers`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+        headers: { "Content-Type": "application/json", Accept: "text/event-stream", ...(await authHeader()) },
         body: JSON.stringify({
           question: request.question,
           jurisdiction_code: request.countryCode,
@@ -72,6 +73,7 @@ export const httpChatService: ChatService = {
       });
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") throw error;
+      if (error instanceof ServiceError) throw error;
       throw new ServiceError("upstream_unavailable", "Can't reach the Aequa server. Is the backend running?");
     }
 
