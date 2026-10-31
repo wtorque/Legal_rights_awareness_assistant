@@ -8,8 +8,11 @@ from app.api.errors import register_exception_handlers
 from app.api.v1.router import api_router
 from app.core.config import get_settings
 from app.core.database import dispose_engine
-from app.core.logging import configure_logging
+from app.core.logging import configure_logging, get_logger
 from app.middleware.request import RequestContextMiddleware
+from app.repositories.documents import DocumentRepository
+
+log = get_logger("app")
 
 
 def create_app() -> FastAPI:
@@ -18,6 +21,9 @@ def create_app() -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
+        removed = DocumentRepository(settings.documents_dir).purge_older_than(settings.upload_retention_days)
+        if removed:
+            log.info("documents_purged", count=removed)
         yield
         await dispose_engine()
 

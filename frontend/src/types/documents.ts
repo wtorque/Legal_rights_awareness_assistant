@@ -14,6 +14,19 @@ export interface DocumentRecord {
   /** "sample" = bundled fixture with fixture text; "upload" = a file the user chose in this session. */
   origin: DataOrigin | "upload";
   analyzed: boolean;
+  /** Live backend only. */
+  detectedType?: string | null;
+  /** True when the PDF has no text layer; OCR is not available, so it cannot be analysed. */
+  needsOcr?: boolean;
+  warnings?: string[];
+  failureReason?: string | null;
+  history?: DocumentEvent[];
+}
+
+export interface DocumentEvent {
+  at: string;
+  kind: "uploaded" | "processed" | "failed" | "analyzed";
+  detail: string;
 }
 
 export interface DocumentParagraph {
@@ -41,7 +54,8 @@ export interface Clause {
   id: string;
   title: string;
   originalText: string;
-  simplified: string;
+  /** Null when no plain-language explanation exists; the original wording is shown instead. */
+  simplified: string | null;
   category: string;
   importance: ClauseImportance;
   flag: ClauseFlag | null;
@@ -62,9 +76,19 @@ export interface DocumentAnalysis {
   missingInformation: string[];
   keyDates: KeyDate[];
   lawyerQuestions: string[];
-  origin: DataOrigin;
+  origin: DataOrigin | "extracted";
+  documentType?: string;
+  /** Citations exactly as written in the document; never verified against an official source. */
+  legalReferences?: LegalReference[];
+  generatedBy?: "rules";
   /** True when a user-uploaded file is paired with a demonstration analysis (the file was not read). */
   demonstrationOnly: boolean;
+}
+
+export interface LegalReference {
+  text: string;
+  page: number;
+  verified: boolean;
 }
 
 export interface ClauseChange {

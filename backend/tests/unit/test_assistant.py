@@ -58,6 +58,7 @@ async def test_endpoint_streams_sse_and_final_answer(client, monkeypatch):
     from app.api.v1.endpoints import assistant as ep
 
     monkeypatch.setattr(ep, "NvidiaChatProvider", lambda settings: FakeProvider([RAW]))
+    monkeypatch.setattr(ep, "OllamaChatProvider", lambda settings: FakeProvider([RAW]))
     r = await client.post("/api/v1/assistant/answers", json={"question": "deposit?", "jurisdiction_code": "IN", "language": "en"})
     assert r.status_code == 200 and r.headers["content-type"].startswith("text/event-stream")
     events = [b for b in r.text.split("\n\n") if b.strip()]
@@ -77,6 +78,6 @@ async def test_endpoint_rejects_bad_input_with_envelope(client):
 
 
 async def test_unconfigured_provider_reports_error_event(client, settings_env):
-    settings_env(NVIDIA_API_KEY="", NVIDIA_CHAT_MODEL="")
+    settings_env(LLM_PROVIDER="nvidia", NVIDIA_API_KEY="", NVIDIA_CHAT_MODEL="")
     r = await client.post("/api/v1/assistant/answers", json={"question": "x", "jurisdiction_code": "IN"})
     assert "event: error" in r.text and "upstream_unavailable" in r.text

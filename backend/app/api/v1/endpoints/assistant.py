@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 
 from app.ai.providers.nvidia import NvidiaChatProvider
+from app.ai.providers.ollama import OllamaChatProvider
 from app.ai.services.assistant import LIMITATIONS, AssistantService, parse_answer
 from app.core.config import Settings, get_settings
 from app.core.exceptions import AppError, UpstreamUnavailable
@@ -17,6 +18,8 @@ log = get_logger("assistant")
 
 
 def get_assistant_service(settings: Settings = Depends(get_settings)) -> AssistantService:
+    if settings.llm_provider == "ollama":
+        return AssistantService(OllamaChatProvider(settings))
     return AssistantService(NvidiaChatProvider(settings))
 
 

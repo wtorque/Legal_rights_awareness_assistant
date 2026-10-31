@@ -76,7 +76,7 @@ export const mockDocumentsService: DocumentsService = {
     return sampleContent[id] ?? null;
   },
 
-  getFileUrl: (id) => fileUrls.get(id) ?? null,
+  getFileUrl: async (id) => fileUrls.get(id) ?? null,
 
   async analyze(id) {
     // Deliberately slow so the scanning animation is visible.
