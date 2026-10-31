@@ -63,6 +63,14 @@ Last verified: **2026-10-31**. Update this file after every meaningful change. O
 - Found in the live run: the model wrote "In Indiana" for an Indian user; a check for other countries was added afterwards and covered by a unit test but not re-run live.
 - Not verified: the frontend with no streamed text (typing indicator until the final event) in a browser; accuracy of plain-language claims; any attack not in the fixtures.
 
+## Demo login and motion (2026-10-31)
+
+- Login now accepts an email or a username; `scripts/seed_demo_user.py` creates the local account `torque` / `torque` (KNOWN_ISSUES #57). Registration still requires a 10-character password.
+- Motion (ADR-026): Lenis smooth scroll, scroll-progress bar, slower route transitions, animated sign-in and register card with drifting background shapes.
+- Verified: backend `pytest` 147 passed, 1 skipped (new test covers username login, seeding and the production refusal). Frontend `tsc`, lint, Vitest 28/28, build, Playwright 46/46. A real Chromium run against the live backend and dev server signed in as `torque`, reached the dashboard, showed Lenis active and an eased scroll (600 px wheel moved 230 px after 120 ms and settled at 510 px), with no console errors.
+- Correction: the earlier note that the Next.js dev warning about instant navigation was fixed by a layout export was wrong; the warning remained until `export const instant = false` was added to each application page, and the browser run above now shows no errors.
+- Not checked: smooth scroll on touch devices, the document viewer's inner scrolling, and dialogs with Lenis running.
+
 ## Completed (frontend, all on mock services)
 
 - Application shell: collapsible sidebar with tooltips and keyboard toggle, mobile drawer, topbar with breadcrumbs, search trigger, jurisdiction and language menus, notifications popover, theme toggle, account menu, shortcuts dialog.
