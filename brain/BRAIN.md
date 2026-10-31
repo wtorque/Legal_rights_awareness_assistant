@@ -43,6 +43,7 @@ Legal Rights Awareness Assistant/
 | What exists today | [DEVELOPMENT_STATUS](DEVELOPMENT_STATUS.md), [FEATURE_MAP](FEATURE_MAP.md) |
 | What is broken or risky | [KNOWN_ISSUES](KNOWN_ISSUES.md) |
 | What is next | [ROADMAP](ROADMAP.md) |
+| Product and domain research | `docs/research/` |
 | Why we chose X | [DECISIONS](DECISIONS.md) |
 | UI look and feel | [DESIGN_SYSTEM](DESIGN_SYSTEM.md), `docs/frontend/` |
 | API and data shapes | [API_CONTRACTS](API_CONTRACTS.md), `docs/integration/DATA_CONTRACTS.md` |

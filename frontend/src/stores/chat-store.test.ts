@@ -32,6 +32,15 @@ describe("chat store with the mock service", () => {
     expect(reply.answer?.sources.every((s) => s.origin === "sample" && s.verifiedAt === null)).toBe(true);
   }, 15_000);
 
+  it("keeps a question sent while the conversation list is still loading", async () => {
+    const loadPromise = useChatStore.getState().load();
+    await useChatStore.getState().send("My landlord has not returned my deposit");
+    await loadPromise;
+    const { conversations, activeId } = useChatStore.getState();
+    const conv = conversations.find((c) => c.id === activeId);
+    expect(conv?.messages.map((m) => m.role)).toEqual(["user", "assistant"]);
+  }, 15_000);
+
   it("renames and removes a conversation", async () => {
     await useChatStore.getState().load();
     const id = useChatStore.getState().conversations[0].id;
