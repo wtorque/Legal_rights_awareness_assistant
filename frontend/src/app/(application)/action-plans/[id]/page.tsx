@@ -5,6 +5,9 @@ import { PageContainer } from "@/components/layout/page-container";
 import { Skeleton } from "@/components/ui/skeleton";
 import { samplePlans } from "@/mocks/action-plans";
 
+// Rendered behind a client-side session check, so it cannot be validated for instant navigation.
+export const instant = false;
+
 export const metadata: Metadata = { title: "Action plan" };
 
 export function generateStaticParams() {

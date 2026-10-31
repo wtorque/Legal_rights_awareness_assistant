@@ -1,5 +1,6 @@
 "use client";
 
+import { motion } from "framer-motion";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -8,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input, Label } from "@/components/ui/input";
 import { languages } from "@/config/languages";
+import { fadeUp, stagger } from "@/lib/motion";
 import { useAuthStore } from "@/stores/auth-store";
 import { Select } from "@/components/ui/select";
 
@@ -37,16 +39,22 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
   };
 
   return (
-    <main className="grid min-h-dvh place-items-center px-4 py-10">
-      <Card className="w-full max-w-md space-y-6 p-6 sm:p-8">
-        <Logo />
-        <div>
+    <main className="relative grid min-h-dvh place-items-center overflow-hidden px-4 py-10">
+      {/* Slow drifting shapes. Decorative; framer-motion switches them off for reduced motion. */}
+      <motion.div aria-hidden className="pointer-events-none absolute -left-24 top-10 size-72 rounded-full bg-primary/10 blur-3xl" animate={{ x: [0, 40, 0], y: [0, 24, 0] }} transition={{ duration: 18, repeat: Infinity, ease: "easeInOut" }} />
+      <motion.div aria-hidden className="pointer-events-none absolute -right-20 bottom-8 size-80 rounded-full bg-brass/15 blur-3xl" animate={{ x: [0, -36, 0], y: [0, -28, 0] }} transition={{ duration: 22, repeat: Infinity, ease: "easeInOut" }} />
+      <motion.div className="relative w-full max-w-md" variants={stagger(0.09, 0.05)} initial="hidden" animate="visible">
+      <Card className="w-full space-y-6 p-6 sm:p-8">
+        <motion.div variants={fadeUp}>
+          <Logo />
+        </motion.div>
+        <motion.div variants={fadeUp}>
           <h1 className="font-display text-3xl">{isRegister ? "Create your account" : "Sign in"}</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             {isRegister ? "Your documents and questions stay linked to you only." : "Welcome back to Aequa."}
           </p>
-        </div>
-        <form onSubmit={submit} className="space-y-4" noValidate>
+        </motion.div>
+        <motion.form variants={fadeUp} onSubmit={submit} className="space-y-4" noValidate>
           {isRegister && (
             <div className="space-y-1.5">
               <Label htmlFor="name">Name</Label>
@@ -54,8 +62,8 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
             </div>
           )}
           <div className="space-y-1.5">
-            <Label htmlFor="email">Email</Label>
-            <Input id="email" type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
+            <Label htmlFor="email">{isRegister ? "Email" : "Email or username"}</Label>
+            <Input id="email" type={isRegister ? "email" : "text"} autoComplete={isRegister ? "email" : "username"} required value={email} onChange={(e) => setEmail(e.target.value)} />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="password">Password</Label>
@@ -93,10 +101,10 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
               {error}
             </p>
           )}
-          <Button type="submit" className="w-full" disabled={busy}>
+          <Button type="submit" className="w-full transition-transform active:scale-[0.98]" disabled={busy}>
             {busy ? "Please wait…" : isRegister ? "Create account" : "Sign in"}
           </Button>
-        </form>
+        </motion.form>
         <p className="text-center text-sm text-muted-foreground">
           {isRegister ? "Already have an account? " : "New here? "}
           <Link href={isRegister ? "/login" : "/register"} className="font-medium text-primary hover:underline">
@@ -105,6 +113,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
         </p>
         <p className="text-xs text-muted-foreground">Email and password only. Google sign-in, phone codes and password reset by email are not available yet.</p>
       </Card>
+      </motion.div>
     </main>
   );
 }

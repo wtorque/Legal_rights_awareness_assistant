@@ -16,6 +16,10 @@ html.lenis body {
 .lenis.lenis-smooth iframe {
   pointer-events: none;
 }
+/* The PDF preview must stay interactive (scroll, zoom, select). */
+.lenis.lenis-smooth iframe[title^="Preview of"] {
+  pointer-events: auto;
+}
 
 @custom-variant dark (&:where(.dark, .dark *));
 

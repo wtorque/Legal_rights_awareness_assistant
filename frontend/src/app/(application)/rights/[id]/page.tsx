@@ -4,6 +4,9 @@ import { PageContainer } from "@/components/layout/page-container";
 import { RightDetailView } from "@/components/rights/right-detail";
 import { Skeleton } from "@/components/ui/skeleton";
 
+// Rendered behind a client-side session check, so it cannot be validated for instant navigation.
+export const instant = false;
+
 export const metadata: Metadata = { title: "Right" };
 
 // Ids come from the catalogue at runtime, so none are known at build time.
