@@ -85,3 +85,19 @@ async def test_refresh_requires_refresh_token_and_password_change_works(client):
 async def test_assistant_requires_sign_in(client):
     r = await client.post("/api/v1/assistant/answers", json={"question": "x", "jurisdiction_code": "IN"})
     assert r.status_code == 401
+
+
+async def test_seeded_username_login_and_production_refusal(client, settings_env, tmp_path):
+    from scripts import seed_demo_user
+
+    seed_demo_user.main()
+    ok = await client.post("/api/v1/auth/login", json={"email": "Torque", "password": "torque"})
+    assert ok.status_code == 200 and ok.json()["user"]["name"] == "Torque"
+    assert (await client.post("/api/v1/auth/login", json={"email": "torque@example.com", "password": "torque"})).status_code == 200
+    assert (await client.post("/api/v1/auth/login", json={"email": "torque", "password": "wrong"})).status_code == 401
+    # Registration keeps its password policy and cannot claim the seeded email.
+    weak = await client.post("/api/v1/auth/register", json={"email": "x@example.com", "password": "torque", "name": "x"})
+    assert weak.status_code == 422
+    settings_env(APP_ENV="production", JWT_SECRET="p" * 40, CORS_ORIGINS='["https://example.org"]')
+    with pytest.raises(SystemExit):
+        seed_demo_user.main()

@@ -56,7 +56,7 @@ class AuthService:
         key = email.lower()
         if len(_recent(key)) >= MAX_FAILURES:
             raise RateLimited("Too many failed attempts. Try again in 15 minutes.")
-        user = await run_in_threadpool(self._repo.find_by_email, key)
+        user = await run_in_threadpool(self._repo.find_by_login, key)
         ok = await run_in_threadpool(verify_password, password, user.password_hash if user else None)
         if not (ok and user):
             _failures.setdefault(key, []).append(time.time())

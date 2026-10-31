@@ -27,6 +27,8 @@ class User(BaseModel):
 class StoredUser(User):
     """On-disk shape. The hash never leaves the repository and service layers."""
 
+    # Optional short sign-in name. Only seeded accounts have one; registration is email based.
+    username: str | None = None
     password_hash: str
 
 
@@ -42,7 +44,8 @@ class RegisterRequest(BaseModel):
 class LoginRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    email: EmailStr
+    # Email address, or the username of a seeded account.
+    email: str = Field(min_length=1, max_length=254)
     password: str = Field(min_length=1, max_length=128)
 
 

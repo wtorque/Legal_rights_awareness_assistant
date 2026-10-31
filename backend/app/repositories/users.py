@@ -29,12 +29,18 @@ class UserRepository:
         path = self._path(user_id)
         return StoredUser.model_validate_json(path.read_text(encoding="utf-8")) if path.is_file() else None
 
-    def find_by_email(self, email: str) -> StoredUser | None:
+    def find_by_login(self, identifier: str) -> StoredUser | None:
+        """Matches an email address or a username, case-insensitively."""
         if not self.root.is_dir():
             return None
-        wanted = email.strip().lower()
+        wanted = identifier.strip().lower()
         for path in self.root.glob("*.json"):
             user = StoredUser.model_validate_json(path.read_text(encoding="utf-8"))
-            if user.email == wanted:
+            if wanted in (user.email, user.username):
                 return user
         return None
+
+    def find_by_email(self, email: str) -> StoredUser | None:
+        wanted = email.strip().lower()
+        user = self.find_by_login(wanted)
+        return user if user and user.email == wanted else None
